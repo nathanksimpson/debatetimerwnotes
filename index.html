@@ -1,0 +1,1818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Debate Timer — SimsonTimer Final</title>
+<style>
+  /* ---------- THEME ---------- */
+  :root{
+    --bg:#f9fafb; --fg:#111827; --card:#ffffff; --bd:#e5e7eb;
+    --track:#e5e7eb; --fill:#111827; --muted:#6b7280;
+    --ok-bg:#d1fae5; --ok-fg:#065f46; --warn-bg:#fef3c7; --warn-fg:#92400e; --bad-bg:#fee2e2; --bad-fg:#7f1d1d;
+    --prop-bg:#dbeafe; --prop-border:#93c5fd; --prop-fg:#1e3a8a;
+    --opp-bg:#fee2e2; --opp-border:#fca5a5; --opp-fg:#7f1d1d;
+    --prep-bg:#f3f4f6; --prep-border:#d1d5db; --prep-fg:#374151;
+    --grace-fg: #7f1d1d; /* Color for grace text in presenter */
+  }
+  :root.dark{
+    --bg:#1f2937; --fg:#f9fafb; --card:#111827; --bd:#374151;
+    --track:#374151; --fill:#f9fafb; --muted:#9ca3af;
+    --grace-fg: #f9fafb;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  
+  /* --- FIX: App/Presenter Mode Toggle (prevents FOUC) --- */
+  /* Hide both roots by default */
+  #mainAppRoot, #presenterRoot {
+    display: none;
+  }
+  /* Show main app when in main mode */
+  body.main-mode #mainAppRoot {
+    display: block;
+  }
+  /* Show presenter root when in presenter mode */
+  body.presenter-mode #presenterRoot {
+    display: flex; /* Use flex to center it */
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    text-align: center;
+  }
+  /* --- End App/Presenter Mode Toggle --- */
+
+  .wrap{min-height:100%;display:flex;flex-direction:column;gap:24px;align-items:center;padding:24px}
+  .container{width:100%;max-width:1100px;display:flex;flex-direction:column;gap:16px}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  h1{font-size:24px;margin:0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{appearance:none;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700}
+  .btn:active{transform:translateY(1px)}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px}
+  .muted{color:var(--muted)}
+  .clock{font-family: "Rubik", ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; font-size:76px; font-weight:900; text-align:center; line-height:1.08; letter-spacing:1px}
+  .progress{height:14px;background:var(--track);border-radius:999px;position:relative;overflow:hidden;touch-action:none}
+  .fill{position:absolute;inset:0;transform-origin:left center;background:var(--fill);transform:scaleX(0)}
+  .grid{display:grid;gap:12px}
+  .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .label{display:flex;flex-direction:column;gap:6px}
+  input.input, select.input, textarea.input {
+    padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);
+    font:inherit; /* Make textarea use body font */
+  }
+  textarea.input {
+    width: 100%;
+    min-height: 110px;
+  }
+  textarea.input:disabled {
+    background: var(--prep-bg);
+    color: var(--muted);
+  }
+  .note{font-size:14px;color:var(--muted)}
+  .speaker-progress{display:flex;flex-wrap:wrap;gap:9px;padding:6px 4px}
+  .spk{font-size:13px;font-weight:800;padding:10px 10px;border-radius:10px;background:var(--card);border:2px solid var(--bd);cursor:grab;user-select:none;min-width:58px;text-align:center;display:flex;align-items:center;justify-content:center}
+  .spk.inactive{opacity:.4;text-decoration:line-through}
+  .spk.active{box-shadow:0 0 0 3px rgba(0,0,0,0.06) inset}
+  .spk.prop{background:var(--prop-bg);border-color:var(--prop-border);color:var(--prop-fg)}
+  .spk.opp{background:var(--opp-bg);border-color:var(--opp-border);color:var(--opp-fg)}
+  .spk.prep{background:var(--prep-bg);border-color:var(--prep-border);color:var(--prep-fg)}
+  #helpModal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:100}
+  #helpModal .card{max-width:760px;max-height:90vh;overflow:auto}
+  @media (max-width:800px){.grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:540px){.grid-3{grid-template-columns:1fr}.clock{font-size:56px}}
+  
+  /* Hideable settings/notes panel */
+  #settingsPanel, #quickTimersPanel, #notesPanel {
+    overflow: hidden;
+    max-height: 1000px; /* Default open height for transition */
+    transition: max-height 0.35s ease;
+  }
+
+  /* STATE COLORS VIA BODY CLASSES */
+  body.state-warn{background:var(--warn-bg); color:var(--warn-fg)}
+  body.state-bad{background:var(--bad-bg); color:var(--bad-fg)}
+  body.state-warn .card, body.state-bad .card{border-color: currentColor}
+  body.state-grace{animation:pulseGrace 2.4s ease-in-out infinite}
+  @keyframes pulseGrace{0%{background:var(--bg)}50%{background:var(--bad-bg)}100%{background:var(--bg)}}
+  
+  #muteBtn .icon-off { display: none; }
+  #muteBtn.muted .icon-on { display: none; }
+  #muteBtn.muted .icon-off { display: inline-block; }
+  #muteBtn svg { vertical-align: middle; width: 18px; height: 18px; }
+  .btn-icon {
+    width: 46px; /* 10px*2 padding + 24px icon + 2px border */
+    height: 46px;
+    padding: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .btn-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  #startBtn.running .icon-play { display: none; }
+  #startBtn.running .icon-pause { display: block; }
+  #startBtn .icon-pause { display: none; }
+  #startBtn .icon-play { display: block; }
+
+  /* Presenter grace mode */
+  /* This style is now injected into the presenter window directly */
+  .presenter-grace #pClock { color: var(--grace-fg); }
+  .presenter-grace { animation: gracePulse 1.6s ease-in-out infinite !important; }
+  /* This is the animation definition for the presenter window */
+  @keyframes gracePulse {
+    0% { background: var(--bg); color: var(--fg); }
+    50% { background: var(--bad-bg); color: var(--bad-fg); }
+    100% { background: var(--bg); color: var(--fg); }
+  }
+  /* Ensure presenter-grace state overrides clock color */
+  .presenter-grace.state-grace #pClock {
+    color: var(--bad-fg);
+  }
+  
+  /* --- Presenter Mode Root Styles (moved from line 130) --- */
+  #pClock {
+    font-family: "Rubik", ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    font-weight: 900;
+    font-size: 22vw;
+    line-height: 1;
+    letter-spacing: 2px;
+  }
+  #pMeta {
+    margin-top: 12px;
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 2vw; /* Make meta text responsive */
+  }
+  
+  /* --- NEW: Mirror Mode Styles --- */
+  body.mirror-mode .wrap {
+    padding: 24px; /* Keep some padding */
+  }
+  body.mirror-mode .container {
+    max-width: 100%; /* Allow main card to be centered */
+  }
+  /* Hide everything except the main timer card */
+  body.mirror-mode #mainAppRoot header,
+  body.mirror-mode #mainAppRoot .card:first-child, /* Speaker Progress card */
+  body.mirror-mode #notesPanel, /* HIDE NOTES IN MIRROR MODE */
+  body.mirror-mode #quickTimersPanel,
+  body.mirror-mode #mainAppRoot .card:last-child { /* Settings card */
+    display: none;
+  }
+  /* Make main timer title clickable to exit */
+  body.mirror-mode #mainTitle {
+    cursor: pointer;
+  }
+  
+  /* --- NEW: Bigger Mirror Mode Timer --- */
+  body.mirror-mode #mainCard { /* Target main card specifically */
+    /* Make the card borderless and transparent for a cleaner look */
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+  }
+  body.mirror-mode #clock {
+    font-size: 20vw; /* Make it huge like presenter mode */
+    font-size: clamp(76px, 20vw, 220px); /* Add clamp for usability */
+    line-height: 1;
+    margin-top: 24px; /* Add some space */
+  }
+  
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- 
+    FIX: This root is for the main application. 
+    It will be hidden if `?presenter=true` is in the URL.
+  -->
+  <div id="mainAppRoot">
+    <div class="wrap">
+      <div class="container">
+        <header>
+          <h1 data-lang-key="debateTimerTitle">Debate Timer</h1>
+          <div class="row">
+            <label class="label" style="margin-right:8px">
+              <span style="font-weight:700" data-lang-key="debateStyle">Debate Style</span>
+              <select id="formatSelect" class="input">
+                <option value="SIMSON">Simson</option>
+                <option value="AP">AP</option>
+                <option value="BP">BP</option>
+                <option value="WSDC">WSDC</option>
+                <option value="PF">PF</option>
+                <option value="CX">Policy / CX</option>
+                <option value="LD">Lincoln–Douglas</option>
+                <option value="CUSTOM">Custom</option>
+              </select>
+            </label>
+            <button id="helpBtn" class="btn" data-lang-key="help">Help</button>
+            <button id="themeBtn" class="btn">Dark Mode</button>
+            <button id="presenterBtn" class="btn" data-lang-key="presenterMode">Presenter Mode</button>
+            <button id="mirrorBtn" class="btn" data-lang-key="mirrorMode">Mirror Mode</button>
+            <button id="toggleQuickTimers" class="btn">Show Quick Timers</button>
+            <button id="toggleNotesBtn" class="btn" data-lang-key="showNotes">Show Notes</button>
+            <button id="enableBtn" class="btn" data-lang-key="initSound">Initialize Sound</button>
+            <button id="muteBtn" class_commented="btn" title="Mute (M)">
+              <svg class="icon-on" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+              <svg class="icon-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M23 9l-6 6"></path><path d="M17 9l6 6"></path></svg>
+            </button>
+            <label class="label" style="flex-direction:row;align-items:center;gap:8px"><span style="font-weight:700" data-lang-key="volume">Volume</span><input id="volume" type="range" min="0" max="1" step="0.05" value="0.6"/></label>
+            <label class="label" style="flex-direction:row;align-items:center;gap:8px">
+              <span style="font-weight:700" data-lang-key="lang">Lang</span>
+              <select id="langSelect" class="input" style="padding-top:10px; padding-bottom:10px;">
+                <option value="en">English</option>
+                <option value="ko">한국어</option>
+              </select>
+            </label>
+          </div>
+        </header>
+  
+        <!-- Speaker Progress --><div class="card">
+          <div style="font-weight:800;margin-bottom:8px" data-lang-key="spkProgress">Speaker Progress</div>
+          <div id="spkBar" class="speaker-progress"></div>
+          <div class="row" style="justify-content:space-between;margin-top:8px">
+            <div class="row">
+              <button id="prevBtn" class="btn" data-lang-key="prev">Previous</button>
+              <button id="nextBtn" class="btn" data-lang-key="next">Next</button>
+            </div>
+            <button id="resetOrder" class="btn" data-lang-key="resetOrder">Reset Order</button>
+          </div>
+          <div class="note" data-lang-key="spkNote">Click = select • Double-click = toggle active • Drag = reorder</div>
+        </div>
+  
+        <!-- Main Timer Card --><div class="card" id="mainCard">
+          <div class="row" style="justify-content:space-between"><div id="mainTitle" style="font-weight:800">Substantive Speech</div><div id="meta" class="muted"></div></div>
+          <div id="clock" class="clock">7:00</div>
+          <div id="mainProgress" class="progress"><div id="fill" class="fill"></div></div>
+          <div class="row" style="justify-content:center;margin-top:10px">
+            <button id="startBtn" class="btn btn-icon" title="Start/Pause (Space)">
+              <svg class="icon-play" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l12 8-12 8V4z"></path></svg>
+              <svg class="icon-pause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"></path></svg>
+            </button>
+            <button id="resetBtn" class="btn btn-icon" title="Reset (R)">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 4v6h6"></path>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+              </svg>
+            </button>
+            <button id="singleBtn" class="btn btn-icon" title="Single Bell (1)">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            </button>
+            <button id="doubleBtn" class="btn btn-icon" title="Double Bell (2)">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              <span style="font-size: 14px; font-weight: 700; margin-left: -4px; line-height: 1;">2</span>
+            </button>
+            <button id="testContBtn" class="btn btn-icon" title="Start continuous bell test">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 21px; height: 21px;">
+                <path d="M1 4v6h6"></path>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+              </svg>
+              <svg xmlns="http://www.w3.org/2D/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="width: 19px; height: 19px; margin-left: -6px; margin-top: -2px;">
+                <path d="M10 10C6 10 6 14 10 14c4 0 4-4 8-4 4 0 4 4 0 4s-4-4-8-4z"></path>
+              </svg>
+            </button>
+            <button id="stopBellBtn" class="btn btn-icon" title="Stop continuous bell">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="m1 1 22 22"></path></svg>
+            </button>
+          </div>
+          <div class="note"><strong data-lang-key="status">Status:</strong> <span id="status">idle</span></div>
+        </div>
+        
+        <!-- NEW Notes Card (Hideable) -->
+        <div id="notesPanel" class="card">
+          <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:800;" data-lang-key="speakerNotes">Speaker Notes</span>
+            <div class="row">
+              <button id="exportNotesBtn" class="btn" data-lang-key="exportNotes">Export Notes</button>
+              <button id="importNotesBtn" class="btn" data-lang-key="importNotes">Import Notes</button>
+              <button id="clearNotesBtn" class="btn" data-lang-key="clearNotes">Clear All Notes</button>
+              <input id="importNotesFile" type="file" accept="application/json" style="display:none">
+            </div>
+          </div>
+          <textarea id="notesArea" class="input" data-lang-key="notesPlaceholder"></textarea>
+        </div>
+  
+        <!-- Quick Timers --><div id="quickTimersPanel" class="grid grid-3">
+          <div class="card">
+            <div style="font-weight:800;margin-bottom:6px" data-lang-key="crossEx">Cross-Ex / Shared</div>
+            <div id="cexClock" class="clock" style="font-size:32px">01:00</div>
+            <div class="progress" style="margin-top:8px"><div id="cexFill" class="fill"></div></div>
+            <div class="row" style="justify-content:center;margin-top:8px"><button id="cexStart" class="btn" data-lang-key="start">Start</button><button id="cexReset" class="btn" data-lang-key="reset">Reset</button></div>
+          </div>
+          <div class="card">
+            <div style="font-weight:800;margin-bottom:6px" data-lang-key="rebuttal">Rebuttal / Reply</div>
+            <div id="rebClock" class="clock" style="font-size:32px">04:00</div>
+            <div class="progress" style="margin-top:8px"><div id="rebFill" class="fill"></div></div>
+            <div class="row" style="justify-content:center;margin-top:8px"><button id="rebStart" class="btn" data-lang-key="start">Start</button><button id="rebReset" class="btn" data-lang-key="reset">Reset</button></div>
+          </div>
+          <div class="card">
+            <div style="font-weight:800;margin-bottom:6px" data-lang-key="prep">Prep</div>
+            <div id="prepClock" class="clock" style="font-size:32px">01:00</div>
+            <div class="progress" style="margin-top:8px"><div id="prepFill" class="fill"></div></div>
+            <div class="row" style="justify-content:center;margin-top:8px"><button id="prepStart" class="btn" data-lang-key="start">Start</button><button id="prepReset" class="btn" data-lang-key="reset">Reset</button></div>
+          </div>
+        </div>
+  
+        <!-- Settings (hideable) --><div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-weight:800;" data-lang-key="settingsTitle">Timer Settings</span><button id="toggleSettings" class="btn" style="padding:6px 10px;font-size:14px">Hide</button></div>
+          <div id="settingsPanel">
+            <div class="grid grid-3">
+              <label class="label"><span data-lang-key="mainTime">Main (m:ss)</span><input id="mainInput" class="input" value="3:00"/></label>
+              <label class="label"><span data-lang-key="firstBell">1st Bell from start (m:ss)</span><input id="firstInput" class="input" value="1:00"/></label>
+              <label class="label"><span data-lang-key="secondBell">2nd Bell from start (m:ss)</span><input id="secondInput" class="input" value="2:00"/></label>
+              <label class="label"><span data-lang-key="yellowAt">Yellow at remaining (m:ss)</span><input id="yellowInput" class="input" value="1:00"/></label>
+              <label class="label"><span data-lang-key="redAt">Red at remaining (m:ss)</span><input id="redInput" class="input" value="0:30"/></label>
+              <label class="label"><span data-lang-key="gracePeriod">Grace Period (m:ss)</span><input id="graceInput" class="input" value="0:30"/></label>
+              <label class="label"><span data-lang-key="prepTime">Prep Time (m:ss)</span><input id="prepInput" class="input" value="1:00"/></label>
+              <label class="label"><span data-lang-key="crossExTime">Cross-Ex (m:ss)</span><input id="cexInput" class="input" value="1:00"/></label>
+              <label class="label"><span data-lang-key="rebuttalTime">Rebuttal (m:ss)</span><input id="rebInput" class="input" value="3:00"/></label>
+              <label class="label"><span data-lang-key="bellSpacing">Bell spacing (ms)</span><input id="spaceInput" class="input" value="250"/></label>
+            </div>
+            <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+              <button id="exportBtn" class="btn" data-lang-key="exportSettings">Export Settings</button>
+              <button id="importBtn" class="btn" data-lang-key="importSettings">Import Settings</button>
+              <input id="importFile" type="file" accept="application/json" style="display:none">
+            </div>
+          </div>
+        </div>
+  
+      </div>
+    </div>
+  </div><!-- End #mainAppRoot -->
+
+  <!-- 
+    FIX: This root is for the PRESENTER view. 
+    It is hidden by default and will be shown if `?presenter=true` is in the URL.
+  -->
+  <div id="presenterRoot">
+    <div class="presenter-wrap">
+      <div id="pClock">00:00</div>
+      <div id="pMeta">Presenter</div>
+    </div>
+  </div>
+
+  <!-- Help Modal (lives outside main app root) --><div id="helpModal">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <h2 style="margin:0" data-lang-key="helpTitle">Help</h2>
+        <button id="closeHelp" class="btn" data-lang-key="close">Close</button>
+      </div>
+      <hr style="border:0;border-top:1px solid var(--bd);margin:12px 0"/>
+      <h3 data-lang-key="quickStart">Quick Start</h3>
+      <ol>
+        <li data-lang-key="quickStart1">Click <strong>Initialize Sound</strong> once (mobile browsers require a gesture).</li>
+        <li data-lang-key="quickStart2">Adjust times in <strong>Timer Settings</strong> if needed.</li>
+        <li data-lang-key="quickStart3">Use <strong>Speaker Progress</strong> to pick who is speaking.</li>
+        <li data-lang-key="quickStart4">Press <strong>Presenter Mode</strong> to open the projector view.</li>
+        <li data-lang-key="quickStart5">Or, use <strong>Mirror Mode</strong> to simplify this screen for mirroring.</li>
+      </ol>
+      <h3 data-lang-key="presenterHelpTitle">Presenter Mode</h3>
+      <p data-lang-key="presenterHelpDesc">Opens a clean, large timer-only display in a separate window. It mirrors start/pause/reset and bells in real time. Use your browser’s move-to-display / fullscreen options on the projector. (Requires M-series iPad or Android DeX).</p>
+      <h3 data-lang-key="mirrorHelpTitle">Mirror Mode</h3>
+      <p data-lang-key="mirrorHelpDesc">Simplifies the main screen to show *only* the timer. This is for devices that can only mirror their display (like iPhones or older iPads). <strong>Click the speech title to exit Mirror Mode.</strong></p>
+      <h3 data-lang-key="shortcutsTitle">Keyboard Shortcuts</h3>
+      <ul>
+        <li data-lang-key="scSpace"><strong>Space</strong> — Start/Pause main timer</li>
+        <li data-lang-key="scR"><strong>R</strong> — Reset current timer</li>
+        <li data-lang-key="scArrows"><strong>→ / ←</strong> — Next / Previous speaker</li>
+        <li data-lang-key="sc12"><strong>1 / 2</strong> — Single / Double bell</li>
+        <li data-lang-key="scM"><strong>M</strong> — Mute / Unmute</li>
+        <li data-lang-key="scD"><strong>D</strong> — Toggle Dark Mode</li>
+        <li data-lang-key="scP"><strong>P</strong> — Toggle Presenter window</li>
+        <li data-lang-key="scH"><strong>H</strong> — Open Help</li>
+      </ul>
+      <h3 data-lang-key="timersTitle">Timers</h3>
+      <ul>
+        <li data-lang-key="timersSub"><strong>Substantive</strong> uses main time with 1st & 2nd bell and a grace period; after grace, continuous bell (250 ms) until stopped.</li>
+        <li data-lang-key="timersReb"><strong>Rebuttal</strong> runs from the Rebuttal time, ending with a double bell.</li>
+        <li data-lang-key="timersCex"><strong>Cross-Ex</strong> and <strong>Prep</strong> are separate mini timers.</li>
+      </ul>
+      <p class="note" data-lang-key="timersNote">Sound respects the volume slider. Uploadable/custom sounds can be added later if needed.</p>
+    </div>
+  </div>
+
+<script>
+// ---------- GLOBAL Utilities (for main + presenter) ----------
+const $ = (s,o=document)=>o.querySelector(s);
+const fmt=(ms)=>{ms=Math.max(0,Math.round(ms/1000));const m=Math.floor(ms/60),s=ms%60;return m+":"+(s<10?"0":"")+s};
+function setDarkGlobal(on) { document.documentElement.classList.toggle('dark', on); }
+function applyBodyState(state){
+  document.body.classList.remove('state-warn','state-bad','state-grace');
+  if(state) document.body.classList.add(state);
+}
+
+(function(){
+  // --- FIX: Check for presenter mode *immediately* ---
+  const isPresenter = new URLSearchParams(location.search).get('presenter')==='true';
+
+  // --- NEW CSS-based mode toggle ---
+  // This runs *before* any content is rendered, preventing FOUC
+  if (isPresenter) {
+    document.body.classList.add('presenter-mode');
+  } else {
+    document.body.classList.add('main-mode');
+  }
+  // --- End new toggle ---
+
+  if(isPresenter){
+    // Listen for sync messages
+    const channel = new BroadcastChannel('debate_timer_sync_v1');
+    channel.onmessage=(e)=>{
+      if(!e||!e.data) return; const m=e.data;
+      if(m.type==='state'){
+        const pc=$('#pClock'); const pm=$('#pMeta');
+        
+        // Apply theme (using global function)
+        setDarkGlobal(m.theme === 'dark');
+
+        // Apply time and meta
+        if(pc) pc.textContent = fmt(m.main.remain);
+        if(pm) pm.textContent = m.meta||'';
+        
+        // Apply grace pulse
+        // Note: 'presenter-grace' class is applied to the BODY
+        document.body.classList.toggle('presenter-grace', m.inGrace);
+
+        // Apply visual state (using global function)
+        applyBodyState(m.state);
+      }
+    };
+    return; // STOP script execution for presenter window
+  }
+
+  // ---------- Utilities ----------
+  const $$ = (s,o=document)=>Array.from(o.querySelectorAll(s));
+  const clamp=(n,a,b)=>Math.min(Math.max(n,a),b);
+  const parseTime = t=>{const p=(t||'').trim().split(':'); if(p.length===1) return (+p[0]||0)*1000; const m=+p[0]||0,s=+p[1]||0; return (m*60+s)*1000};
+  
+  // ---------- Translations ----------
+  const translations = {
+    en: {
+      // Header
+      debateTimerTitle: 'Debate Timer',
+      debateStyle: 'Debate Style',
+      help: 'Help',
+      lightMode: 'Light Mode',
+      darkMode: 'Dark Mode',
+      presenterMode: 'Presenter Mode',
+      mirrorMode: 'Mirror Mode',
+      showQuickTimers: 'Show Quick Timers',
+      hideQuickTimers: 'Hide Quick Timers',
+      showNotes: 'Show Notes',
+      hideNotes: 'Hide Notes',
+      initSound: 'Initialize Sound',
+      volume: 'Volume',
+      lang: 'Lang',
+      // Speaker Progress
+      spkProgress: 'Speaker Progress',
+      prev: 'Previous',
+      next: 'Next',
+      resetOrder: 'Reset Order',
+      spkNote: 'Click = select • Double-click = toggle active • Drag = reorder',
+      // Main Timer
+      substantive: 'Substantive Speech',
+      replyRebuttal: 'Reply/Rebuttal',
+      grace: 'Grace',
+      status: 'Status:',
+      statusIdle: 'idle',
+      statusRunning: 'running',
+      statusPaused: 'paused',
+      statusSoundReady: 'Sound ready.',
+      statusSoundFail: 'Sound failed. Please refresh.',
+      start: 'Start',
+      pause: 'Pause',
+      reset: 'Reset',
+      // Notes
+      speakerNotes: 'Speaker Notes',
+      notesPlaceholder: 'Type notes for the current speaker...',
+      exportNotes: 'Export Notes',
+      importNotes: 'Import Notes',
+      clearNotes: 'Clear All Notes',
+      // Quick Timers
+      crossEx: 'Cross-Ex / Shared',
+      rebuttal: 'Rebuttal / Reply',
+      prep: 'Prep',
+      // Settings
+      settingsTitle: 'Timer Settings',
+      hide: 'Hide',
+      show: 'Show',
+      mainTime: 'Main (m:ss)',
+      firstBell: '1st Bell from start (m:ss)',
+      secondBell: '2nd Bell from start (m:ss)',
+      yellowAt: 'Yellow at remaining (m:ss)',
+      redAt: 'Red at remaining (m:ss)',
+      gracePeriod: 'Grace Period (m:ss)',
+      prepTime: 'Prep Time (m:ss)',
+      crossExTime: 'Cross-Ex (m:ss)',
+      rebuttalTime: 'Rebuttal (m:ss)',
+      bellSpacing: 'Bell spacing (ms)',
+      exportSettings: 'Export Settings',
+      importSettings: 'Import Settings',
+      // Help Modal
+      helpTitle: 'Help',
+      close: 'Close',
+      quickStart: 'Quick Start',
+      quickStart1: 'Click <strong>Initialize Sound</strong> once (mobile browsers require a gesture).',
+      quickStart2: 'Adjust times in <strong>Timer Settings</strong> if needed.',
+      quickStart3: 'Use <strong>Speaker Progress</strong> to pick who is speaking.',
+      quickStart4: 'Press <strong>Presenter Mode</strong> to open the projector view.',
+      quickStart5: 'Or, use <strong>Mirror Mode</strong> to simplify this screen for mirroring.',
+      presenterHelpTitle: 'Presenter Mode',
+      presenterHelpDesc: 'Opens a clean, large timer-only display in a separate window. It mirrors start/pause/reset and bells in real time. Use your browser’s move-to-display / fullscreen options on the projector. (Requires M-series iPad or Android DeX).',
+      mirrorHelpTitle: 'Mirror Mode',
+      mirrorHelpDesc: 'Simplifies the main screen to show *only* the timer. This is for devices that can only mirror their display (like iPhones or older iPads). <strong>Click the speech title to exit Mirror Mode.</strong>',
+      shortcutsTitle: 'Keyboard Shortcuts',
+      scSpace: '<strong>Space</strong> — Start/Pause main timer',
+      scR: '<strong>R</strong> — Reset current timer',
+      scArrows: '<strong>→ / ←</strong> — Next / Previous speaker',
+      sc12: '<strong>1 / 2</strong> — Single / Double bell',
+      scM: '<strong>M</strong> — Mute / Unmute',
+      scD: '<strong>D</strong> — Toggle Dark Mode',
+      scP: '<strong>P</strong> — Toggle Presenter window',
+      scH: '<strong>H</strong> — Open Help',
+      timersTitle: 'Timers',
+      timersSub: '<strong>Substantive</strong> uses main time with 1st & 2nd bell and a grace period; after grace, continuous bell (250 ms) until stopped.',
+      timersReb: '<strong>Rebuttal</strong> runs from the Rebuttal time, ending with a double bell.',
+      timersCex: '<strong>Cross-Ex</strong> and <strong>Prep</strong> are separate mini timers.',
+      timersNote: 'Sound respects the volume slider. Uploadable/custom sounds can be added later if needed.',
+      // Dynamic Roles (will be handled by PRESETS)
+      roundPrep: 'Round Prep',
+      prepFor: 'Prep for',
+      // Button Titles
+      titleMute: 'Mute (M)',
+      titleStart: 'Start/Pause (Space)',
+      titleReset: 'Reset (R)',
+      titleSingle: 'Single Bell (1)',
+      titleDouble: 'Double Bell (2)',
+      titleTestCont: 'Start continuous bell test',
+      titleStopBell: 'Stop continuous bell',
+    },
+    ko: {
+      // Header
+      debateTimerTitle: '토론 타이머',
+      debateStyle: '토론 방식',
+      help: '도움말',
+      lightMode: '라이트 모드',
+      darkMode: '다크 모드',
+      presenterMode: '발표자 모드',
+      mirrorMode: '미러 모드',
+      showQuickTimers: '빠른 타이머 표시',
+      hideQuickTimers: '빠른 타이머 숨기기',
+      showNotes: '메모 보이기',
+      hideNotes: '메모 숨기기',
+      initSound: '소리 초기화',
+      volume: '볼륨',
+      lang: '언어',
+      // Speaker Progress
+      spkProgress: '발표자 진행',
+      prev: '이전',
+      next: '다음',
+      resetOrder: '순서 초기화',
+      spkNote: '클릭 = 선택 • 더블 클릭 = 활성/비활성 • 드래그 = 순서 변경',
+      // Main Timer
+      substantive: '입론',
+      replyRebuttal: '답변/반박',
+      grace: '유예',
+      status: '상태:',
+      statusIdle: '대기 중',
+      statusRunning: '실행 중',
+      statusPaused: '일시정지',
+      statusSoundReady: '소리 준비 완료.',
+      statusSoundFail: '소리 초기화 실패. 새로고침하세요.',
+      start: '시작',
+      pause: '일시정지',
+      reset: '초기화',
+      // Notes
+      speakerNotes: '발표자 메모',
+      notesPlaceholder: '현재 발표자를 위한 메모를 입력하세요...',
+      exportNotes: '메모 내보내기',
+      importNotes: '메모 가져오기',
+      clearNotes: '모든 메모 지우기',
+      // Quick Timers
+      crossEx: '교차조사 / 공유',
+      rebuttal: '반박 / 답변',
+      prep: '준비',
+      // Settings
+      settingsTitle: '타이머 설정',
+      hide: '숨기기',
+      show: '보이기',
+      mainTime: '주요 (m:ss)',
+      firstBell: '첫 번째 벨 (시작부터 m:ss)',
+      secondBell: '두 번째 벨 (시작부터 m:ss)',
+      yellowAt: '노란색 (남은 시간 m:ss)',
+      redAt: '빨간색 (남은 시간 m:ss)',
+      gracePeriod: '유예 시간 (m:ss)',
+      prepTime: '준비 시간 (m:ss)',
+      crossExTime: '교차조사 (m:ss)',
+      rebuttalTime: '반박 (m:ss)',
+      bellSpacing: '벨 간격 (ms)',
+      exportSettings: '설정 내보내기',
+      importSettings: '설정 가져오기',
+      // Help Modal
+      helpTitle: '도움말',
+      close: '닫기',
+      quickStart: '빠른 시작',
+      quickStart1: '<strong>소리 초기화</strong>를 한 번 클릭하세요 (모바일 브라우저).',
+      quickStart2: '필요한 경우 <strong>타이머 설정</strong>에서 시간을 조정하세요.',
+      quickStart3: '<strong>발표자 진행</strong>을 사용해 현재 발표자를 선택하세요.',
+      quickStart4: '<strong>발표자 모드</strong>를 눌러 프로젝터용 창을 여세요.',
+      quickStart5: '또는, <strong>미러 모드</strong>를 사용해 화면을 단순화하세요.',
+      presenterHelpTitle: '발표자 모드',
+      presenterHelpDesc: '별도 창에 크고 깔끔한 타이머 전용 디스플레이를 엽니다. 시작/일시정지/초기화 및 벨소리가 실시간으로 동기화됩니다. (M-시리즈 iPad 또는 Android DeX 필요).',
+      mirrorHelpTitle: '미러 모드',
+      mirrorHelpDesc: '메인 화면을 타이머만 표시하도록 단순화합니다. (iPhone 또는 구형 iPad처럼) 화면 미러링만 가능한 기기용입니다. <strong>미러 모드를 종료하려면 발표 제목을 클릭하세요.</strong>',
+      shortcutsTitle: '키보드 단축키',
+      scSpace: '<strong>Space</strong> — 시작/일시정지',
+      scR: '<strong>R</strong> — 현재 타이머 초기화',
+      scArrows: '<strong>→ / ←</strong> — 다음 / 이전 발표자',
+      sc12: '<strong>1 / 2</strong> — 싱글 / 더블 벨',
+      scM: '<strong>M</strong> — 음소거 / 해제',
+      scD: '<strong>D</strong> — 다크 모드 전환',
+      scP: '<strong>P</strong> — 발표자 창 열기',
+      scH: '<strong>H</strong> — 도움말 열기',
+      timersTitle: '타이머',
+      timersSub: '<strong>입론</strong>은 주요 시간, 1/2차 벨, 유예 시간을 사용합니다. 유예 시간이 끝나면 멈출 때까지 연속 벨(250ms)이 울립니다.',
+      timersReb: '<strong>반박</strong>은 설정된 시간에서 실행되며 더블 벨로 종료됩니다.',
+      timersCex: '<strong>교차조사</strong>와 <strong>준비</strong>는 별개의 미니 타이머입니다.',
+      timersNote: '소리는 볼륨 슬라이더를 따릅니다. 추후 커스텀 사운드를 추가할 수 있습니다.',
+      // Dynamic Roles
+      roundPrep: '라운드 준비',
+      prepFor: '준비 (다음)',
+      // Button Titles
+      titleMute: '음소거 (M)',
+      titleStart: '시작/일시정지 (Space)',
+      titleReset: '초기화 (R)',
+      titleSingle: '싱글 벨 (1)',
+      titleDouble: '더블 벨 (2)',
+      titleTestCont: '연속 벨 테스트',
+      titleStopBell: '벨 멈춤',
+    }
+  };
+  let currentLang = translations.en;
+  const langSelect = $('#langSelect');
+
+  // ---------- Theme ----------
+  const themeBtn = $('#themeBtn');
+  const setDark = (on)=>{
+    document.documentElement.classList.toggle('dark',on); 
+    localStorage.setItem('debateTheme', on? 'dark':'light'); 
+    themeBtn.textContent = on? currentLang.lightMode : currentLang.darkMode;
+  };
+  setDark(localStorage.getItem('debateTheme')==='dark');
+  themeBtn.onclick = ()=> setDark(!document.documentElement.classList.contains('dark'));
+
+  // ---------- Help ----------
+  const helpBtn=$('#helpBtn'), helpModal=$('#helpModal'), closeHelp=$('#closeHelp');
+  helpBtn.onclick=()=>helpModal.style.display='flex';
+  closeHelp.onclick=()=>helpModal.style.display='none';
+  window.addEventListener('keydown',e=>{ if(e.key.toLowerCase()==='h'){ helpModal.style.display='flex' } });
+
+  // ---------- Audio ----------
+  let audioCtx=null, unlocked=false, masterGain=null, muted=false; let contBellInterval=null;
+  const enableBtn=$('#enableBtn'), muteBtn=$('#muteBtn'), volume=$('#volume');
+  async function initAudio(){
+    try{
+      audioCtx = new (window.AudioContext||window.webkitContext)();
+      masterGain = audioCtx.createGain(); masterGain.gain.value = +volume.value; masterGain.connect(audioCtx.destination);
+      unlocked=true; setStatus('Sound ready.');
+    }catch(e){ setStatus('Sound failed. Please refresh.'); }
+  }
+  enableBtn.onclick=initAudio;
+  volume.oninput=()=>{ if(masterGain) masterGain.gain.value = +volume.value };
+  function ding({type='single'}={}){
+    if(!unlocked||!audioCtx) return;
+    const now=audioCtx.currentTime;
+    const osc=audioCtx.createOscillator();
+    const osc2=audioCtx.createOscillator();
+    const gain=audioCtx.createGain();
+    const base=880; // A5
+    osc.type='sine'; osc.frequency.setValueAtTime(base,now);
+    osc2.type='sine'; osc2.frequency.setValueAtTime(base*1.5,now);
+    gain.gain.setValueAtTime(muted?0:0.4,now);
+    gain.gain.exponentialRampToValueAtTime(muted?0:0.0001, now+0.8);
+    osc.connect(gain); osc2.connect(gain); gain.connect(masterGain);
+    osc.start(now); osc2.start(now); osc.stop(now+0.9); osc2.stop(now+0.9);
+  }
+  function stopContinuous(){ if(contBellInterval){ clearInterval(contBellInterval); contBellInterval=null } }
+
+  muteBtn.onclick=()=>{ 
+    muted=!muted; 
+    muteBtn.classList.toggle('muted', muted);
+  };
+
+  // ---------- Presenter Mode ----------
+  const channel = new BroadcastChannel('debate_timer_sync_v1');
+  let presenterWin=null;
+  const presenterBtn=$('#presenterBtn');
+  presenterBtn.onclick=()=>{
+    if(!presenterWin || presenterWin.closed){
+      presenterWin = window.open(window.location.pathname+'?presenter=true', 'presenter', 'width=1000,height=700');
+      if(presenterWin){ presenterWin.focus(); setTimeout(()=>syncOut(true),150); }
+    }else{ presenterWin.focus(); }
+  };
+  
+  // ---------- NEW: Mirror Mode ----------
+  const mirrorBtn = $('#mirrorBtn');
+  mirrorBtn.onclick = () => {
+    document.body.classList.toggle('mirror-mode');
+  };
+  // Click title to exit mirror mode
+  $('#mainTitle').onclick = () => {
+    document.body.classList.remove('mirror-mode');
+  };
+
+  // ---------- Sync Function ----------
+  function syncOut(full=false){
+    // Calculate state here, just for the message
+    const left = mainRemain;
+    const warn = left <= yellow && left > red && mode==='main' && !inGrace;
+    const bad = left <= red && left > 0 && mode==='main' && !inGrace;
+    let bodyState = null;
+    let metaText = (titleEl?.textContent||'') + (metaEl.textContent? ' — '+metaEl.textContent : '');
+    let remainTime = mainRemain;
+
+    if(inGrace) {
+      bodyState = 'state-grace';
+      remainTime = graceRemain; 
+      
+      const s = speakers[activeIdx];
+      const role = s ? (s.role || '') : '';
+      metaText = `${role} — ${currentLang.grace}`; 
+    }
+    else if(bad) bodyState = 'state-bad';
+    else if(warn) bodyState = 'state-warn';
+
+    const payload={
+      type:'state', 
+      full, 
+      main:{remain: remainTime, total:mainTotal, running:mainRunning}, 
+      meta: metaText, 
+      inGrace,
+      state: bodyState,
+      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+    };
+    channel.postMessage(payload);
+  }
+  
+  // ---------- Presets (base) ----------
+  // REMOVED `notes` property from all base speakers
+  const PRESETS = {
+    SIMSON: {
+      label: 'Simson',
+      base: [
+        {role_en:'PM', role_ko:'총리 (PM)', side:'prop', initials:'PM'},
+        {role_en:'LO', role_ko:'야당대표 (LO)', side:'opp', initials:'LO'},
+        {role_en:'DPM', role_ko:'부총리 (DPM)', side:'prop', initials:'DPM'},
+        {role_en:'DLO', role_ko:'야당부대표 (DLO)', side:'opp', initials:'DLO'},
+        {role_en:'GW', role_ko:'여당 원내총무 (GW)', side:'prop', initials:'GW'},
+        {role_en:'OW', role_ko:'야당 원내총무 (OW)', side:'opp', initials:'OW'},
+        {role_en:'GR', role_ko:'여당 답변 (GR)', side:'prop', initials:'GR'},
+        {role_en:'OR', role_ko:'야당 답변 (OR)', side:'opp', initials:'OR'}
+      ],
+      settings: { main:'3:00', first:'1:00', second:'2:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'1:00', cex:'1:00', reb:'3:00', spacing:'250', roundPrep:'20:00' }
+    },
+    AP: {
+      label: 'Asian Parliamentary',
+      base: [
+        {role_en:'Prime Minister', role_ko:'총리', side:'prop', initials:'PM'},
+        {role_en:'Leader of Opposition', role_ko:'야당대표', side:'opp', initials:'LO'},
+        {role_en:'Deputy Prime Minister', role_ko:'부총리', side:'prop', initials:'DPM'},
+        {role_en:'Deputy Leader of Opposition', role_ko:'야당부대표', side:'opp', initials:'DLO'},
+        {role_en:'Government Whip', role_ko:'여당 원내총무', side:'prop', initials:'GW'},
+        {role_en:'Opposition Whip', role_ko:'야당 원내총무', side:'opp', initials:'OW'},
+        {role_en:'Opposition Reply', role_ko:'야당 답변', side:'opp', initials:'OR'},
+        {role_en:'Government Reply', role_ko:'여당 답변', side:'prop', initials:'GR'}
+      ],
+      settings: { main:'7:00', first:'1:00', second:'6:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'30:00', cex:'1:00', reb:'4:00', spacing:'250', roundPrep:'00:00' }
+    },
+    BP: {
+      label: 'British Parliamentary',
+      base: [
+        {role_en:'Prime Minister', role_ko:'총리', side:'prop', initials:'PM'},
+        {role_en:'Leader of Opposition', role_ko:'야당대표', side:'opp', initials:'LO'},
+        {role_en:'Deputy Prime Minister', role_ko:'부총리', side:'prop', initials:'DPM'},
+        {role_en:'Deputy Leader of Opposition', role_ko:'야당부대표', side:'opp', initials:'DLO'},
+        {role_en:'Member of Government', role_ko:'여당 의원', side:'prop', initials:'MG'},
+        {role_en:'Member of Opposition', role_ko:'야당 의원', side:'opp', initials:'MO'},
+        {role_en:'Government Whip', role_ko:'여당 원내총무', side:'prop', initials:'GW'},
+        {role_en:'Opposition Whip', role_ko:'야당 원내총무', side:'opp', initials:'OW'},
+        {role_en:'Opposition Reply', role_ko:'야당 답변', side:'opp', initials:'OR'},
+        {role_en:'Government Reply', role_ko:'여당 답변', side:'prop', initials:'GR'}
+      ],
+      settings: { main:'7:00', first:'1:00', second:'6:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'1:00', reb:'4:00', spacing:'250', roundPrep:'15:00' }
+    },
+    WSDC: {
+      label: 'WSDC',
+      base: [
+        {role_en:'1st Prop', role_ko:'1번 찬성', side:'prop', initials:'P1'},
+        {role_en:'1st Opp', role_ko:'1번 반대', side:'opp', initials:'O1'},
+        {role_en:'2nd Prop', role_ko:'2번 찬성', side:'prop', initials:'P2'},
+        {role_en:'2nd Opp', role_ko:'2번 반대', side:'opp', initials:'O2'},
+        {role_en:'3rd Prop', role_ko:'3번 찬성', side:'prop', initials:'P3'},
+        {role_en:'3rd Opp', role_ko:'3번 반대', side:'opp', initials:'O3'},
+        {role_en:'Opp Reply', role_ko:'반대 답변', side:'opp', initials:'OR'},
+        {role_en:'Prop Reply', role_ko:'찬성 답변', side:'prop', initials:'PR'}
+      ],
+      settings: { main:'8:00', first:'1:00', second:'7:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'1:00', reb:'4:00', spacing:'250', roundPrep:'00:00' }
+    },
+    PF: {
+      label: 'Public Forum',
+      base: [
+        {role_en:'Speaker 1 (Team A)', role_ko:'발표자 1 (A팀)', side:'prop', initials:'A1'},
+        {role_en:'Speaker 2 (Team B)', role_ko:'발표자 2 (B팀)', side:'opp', initials:'B1'},
+        {role_en:'Crossfire (1 & 2)', role_ko:'교차조사 (1 & 2)', side:'neutral', initials:'C1-2'},
+        {role_en:'Speaker 3 (Team A)', role_ko:'발표자 3 (A팀)', side:'prop', initials:'A2'},
+        {role_en:'Speaker 4 (Team B)', role_ko:'발표자 4 (B팀)', side:'opp', initials:'B2'},
+        {role_en:'Crossfire (3 & 4)', role_ko:'교차조사 (3 & 4)', side:'neutral', initials:'C3-4'},
+        {role_en:'Summary 1 (Team A)', role_ko:'요약 1 (A팀)', side:'prop', initials:'AS'},
+        {role_en:'Summary 2 (Team B)', role_ko:'요약 2 (B팀)', side:'opp', initials:'BS'},
+        {role_en:'Grand Crossfire', role_ko:'전체 교차조사', side:'neutral', initials:'GC'},
+        {role_en:'Final Focus 1 (A)', role_ko:'최종 1 (A팀)', side:'prop', initials:'AFF'},
+        {role_en:'Final Focus 2 (B)', role_ko:'최종 2 (B팀)', side:'opp', initials:'BFF'}
+      ],
+      settings: { main:'4:00', first:'1:00', second:'3:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'3:00', reb:'2:00', spacing:'250', roundPrep:'00:00' }
+    },
+    CX: {
+      label: 'Policy / CX',
+      base: [
+        {role_en:'1st Aff Constructive', role_ko:'1차 긍정 입론', side:'prop', initials:'1AC'},
+        {role_en:'Cross-Ex (by 2NC)', role_ko:'교차조사 (2NC)', side:'opp', initials:'CX'},
+        {role_en:'1st Neg Constructive', role_ko:'1차 부정 입론', side:'opp', initials:'1NC'},
+        {role_en:'Cross-Ex (by 1AC)', role_ko:'교차조사 (1AC)', side:'prop', initials:'CX'},
+        {role_en:'2nd Aff Constructive', role_ko:'2차 긍정 입론', side:'prop', initials:'2AC'},
+        {role_en:'Cross-Ex (by 1NC)', role_ko:'교차조사 (1NC)', side:'opp', initials:'CX'},
+        {role_en:'2nd Neg Constructive', role_ko:'2차 부정 입론', side:'opp', initials:'2NC'},
+        {role_en:'Cross-Ex (by 2AC)', role_ko:'교차조사 (2AC)', side:'prop', initials:'CX'},
+        {role_en:'1st Neg Rebuttal', role_ko:'1차 부정 반박', side:'opp', initials:'1NR'},
+        {role_en:'1st Aff Rebuttal', role_ko:'1차 긍정 반박', side:'prop', initials:'1AR'},
+        {role_en:'2nd Neg Rebuttal', role_ko:'2차 부정 반박', side:'opp', initials:'2NR'},
+        {role_en:'2nd Aff Rebuttal', role_ko:'2차 긍정 반박', side:'prop', initials:'2AR'}
+      ],
+      settings: { main:'8:00', first:'1:00', second:'7:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'3:00', reb:'5:00', spacing:'250', roundPrep:'00:00' }
+    },
+    LD: {
+      label: 'Lincoln–Douglas',
+      base: [
+        {role_en:'Aff Constructive', role_ko:'긍정 입론', side:'prop', initials:'AC'},
+        {role_en:'Cross-Ex', role_ko:'교차조사', side:'opp', initials:'CX'},
+        {role_en:'Neg Constructive', role_ko:'부정 입론', side:'opp', initials:'NC'},
+        {role_en:'Cross-Ex', role_ko:'교차조사', side:'prop', initials:'CX'},
+        {role_en:'1st Aff Rebuttal', role_ko:'1차 긍정 반박', side:'prop', initials:'1AR'},
+        {role_en:'Neg Rebuttal', role_ko:'부정 반박', side:'opp', initials:'NR'},
+        {role_en:'2nd Aff Rebuttal', role_ko:'2차 긍정 반박', side:'prop', initials:'2AR'}
+      ],
+      settings: { main:'6:00', first:'1:00', second:'5:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'3:00', reb:'4:00', spacing:'250', roundPrep:'00:00' }
+    },
+    CUSTOM: {
+      label: 'Custom',
+      base: [],
+      settings: {}
+    }
+  };
+
+  // ---------- Runtime state ----------
+  let speakers = [];       // full sequence including prep tokens
+  let baseSpeakers = [];   // base speakers (no preps)
+  let activeIdx = 0;
+  const spkBar=$('#spkBar');
+  const formatSelect=$('#formatSelect');
+
+  // ---------- DOM references ----------
+  const clockEl=$('#clock'), fillEl=$('#fill'), metaEl=$('#meta'), statusEl=$('#status'), titleEl=$('#mainTitle');
+  const mainProgress=$('#mainProgress');
+  const mainInput=$('#mainInput'), firstInput=$('#firstInput'), secondInput=$('#secondInput'), yellowInput=$('#yellowInput'), redInput=$('#redInput'), graceInput=$('#graceInput');
+  const prepInput=$('#prepInput'), cexInput=$('#cexInput'), rebInput=$('#rebInput'), spaceInput=$('#spaceInput');
+  const startBtn=$('#startBtn'), resetBtn=$('#resetBtn'), singleBtn=$('#singleBtn'), doubleBtn=$('#doubleBtn'), testContBtn=$('#testContBtn'), stopBellBtn=$('#stopBellBtn');
+  const prepClock=$('#prepClock'), prepFill=$('#prepFill'), prepStart=$('#prepStart'), prepReset=$('#prepReset');
+  const cexClock=$('#cexClock'), cexFill=$('#cexFill'), cexStart=$$('#cexStart'), cexReset=$('#cexReset');
+  const rebClock=$('#rebClock'), rebFill=$('#rebFill'), rebStart=$('#rebStart'), rebReset=$('#rebReset');
+
+  // ---------- NEW: Notes ----------
+  const notesPanel = $('#notesPanel');
+  const toggleNotesBtn = $('#toggleNotesBtn');
+  const notesArea = $('#notesArea');
+  const exportNotesBtn = $('#exportNotesBtn');
+  const importNotesBtn = $('#importNotesBtn');
+  const importNotesFile = $('#importNotesFile');
+  const clearNotesBtn = $('#clearNotesBtn');
+  let notesVisible = false;
+  let notesStore = {};
+
+  // Global timer state
+  let mainTotal = parseTime(mainInput.value), mainRemain = mainTotal, mainRunning=false, lastTick=0;
+  let graceRemain = 0, inGrace=false;
+  let mode='main'; // 'main' | 'prep' | 'reb' | 'cross'
+  let prepRemain = parseTime(prepInput.value), cexRemain=parseTime(cexInput.value), rebRemain=parseTime(rebInput.value);
+
+  // wake lock
+  let wakeLock = null;
+  async function requestWakeLock(){
+    if('wakeLock' in navigator && !wakeLock){
+      try{ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', ()=>{ wakeLock = null }); }
+      catch(e){ /* ignore */ }
+    }
+  }
+  async function releaseWakeLock(){
+    try{ if(wakeLock){ await wakeLock.release(); wakeLock = null } }catch(e){}
+  }
+
+  // ---------- helpers ----------
+  function saveSettings(){
+    const s={main:mainInput.value, first:firstInput.value, second:secondInput.value, yellow:yellowInput.value, red:redInput.value, grace:graceInput.value, prep:prepInput.value, cex:cexInput.value, reb:rebInput.value, spacing:spaceInput.value};
+    localStorage.setItem('debateSettings', JSON.stringify(s));
+  }
+  function loadSettings(){
+    try{ const s=JSON.parse(localStorage.getItem('debateSettings')||'null'); if(!s) return; mainInput.value=s.main; firstInput.value=s.first; secondInput.value=s.second; yellowInput.value=s.yellow; redInput.value=s.red; graceInput.value=s.grace; prepInput.value=s.prep; cexInput.value=s.cex; rebInput.value=s.reb; spaceInput.value=s.spacing; }catch(e){}
+  }
+  loadSettings();
+
+  let firstBell = parseTime(firstInput.value), secondBell = parseTime(secondInput.value), spacing = +spaceInput.value || 250;
+  let yellow=parseTime(yellowInput.value), red=parseTime(redInput.value), grace=parseTime(graceInput.value);
+
+  function syncFromInputs(){
+    mainTotal=parseTime(mainInput.value); firstBell=parseTime(firstInput.value); secondBell=parseTime(secondInput.value);
+    yellow=parseTime(yellowInput.value); red=parseTime(redInput.value); grace=parseTime(graceInput.value); spacing=+spaceInput.value||250;
+    prepRemain=parseTime(prepInput.value); cexRemain=parseTime(cexInput.value); rebRemain=parseTime(rebInput.value);
+    if(mode==='main'){ mainRemain=Math.min(mainRemain, mainTotal); }
+    
+    // NEW: Save to custom settings if in custom mode
+    if(formatSelect.value === 'CUSTOM') {
+      const s={main:mainInput.value, first:firstInput.value, second:secondInput.value, yellow:yellowInput.value, red:redInput.value, grace:graceInput.value, prep:prepInput.value, cex:cexInput.value, reb:rebInput.value, spacing:spaceInput.value};
+      localStorage.setItem('customSettings', JSON.stringify(s));
+      PRESETS.CUSTOM.settings = s;
+    } else {
+      saveSettings();
+    }
+    
+    updateMeta(); render(); syncOut();
+  }
+
+  $$('input.input').forEach(i=> i.addEventListener('change', ()=>{ syncFromInputs(); }));
+
+  // ---------- Build full speaker sequence with: Round Prep first, then speech+preps (prep belongs to NEXT speaker) ----------
+  function buildSequenceForPreset(presetName){
+    const preset = PRESETS[presetName] || PRESETS.SIMSON;
+    // Clean 'notes' property from preset base, just in case
+    preset.base.forEach(s => delete s.notes);
+    baseSpeakers = JSON.parse(JSON.stringify(preset.base)); // clone
+    speakers = [];
+    const langKey = langSelect.value === 'ko' ? 'role_ko' : 'role_en';
+
+
+    // Insert 20-minute round prep at the very beginning (if configured)
+    const roundPrepDur = (preset.settings && preset.settings.roundPrep) || '00:00';
+    if(parseTime(roundPrepDur) > 0){
+      speakers.push({type:'prep', role: currentLang.roundPrep, side:'neutral', initials:'20m Prep', baseIndex:-1});
+    }
+
+    // For each base speaker, add speaker then a prep (except after last)
+    for(let i=0;i<baseSpeakers.length;i++){
+      const sp = baseSpeakers[i];
+      // Fallback for custom presets with missing keys
+      const role = sp[langKey] || sp.role_en || 'Speaker ' + (i+1);
+      const initials = sp.initials || 'SP' + (i+1);
+      const side = sp.side || 'neutral';
+      
+      // Add `role_en` to the sequence speaker for stable note key
+      speakers.push({type:'spk', role: role, role_en: sp.role_en, side: side, initials: initials, baseIndex:i});
+      
+      // Don't add prep time if it's 0:00
+      const prepTime = (preset.settings && preset.settings.prep) || '00:00';
+      // --- FIX: Do not add in-line prep for AP format ---
+      if(i < baseSpeakers.length-1 && parseTime(prepTime) > 0 && presetName !== 'AP'){
+        const next = baseSpeakers[i+1];
+        const nextSide = (next && next.side) || 'neutral';
+        speakers.push({type:'prep', role:currentLang.prep, side:nextSide, initials:'Prep', belongsToIndex:i+1});
+      }
+    }
+    activeIdx = 0;
+  }
+
+  // ---------- Render speakers UI ----------
+  function drawSpeakers(){
+    spkBar.innerHTML='';
+    speakers.forEach((s, idx)=>{
+      const el = document.createElement('div');
+      const sideClass = s.type==='prep' ? 'prep' : (s.side==='opp'?'opp':'prop');
+      el.className = 'spk ' + sideClass + (idx===activeIdx? ' active':'') + (s.disabled? ' inactive':'');
+      
+      let textContent = s.initials || s.role;
+      // Use role_en or role_ko for initials if initials field is missing
+      if (!s.initials) {
+        textContent = s[langSelect.value === 'ko' ? 'role_ko' : 'role_en'] || s.role_en || 'SPK';
+      }
+      el.textContent = textContent;
+
+      el.title = s.role + (s.type==='prep' && s.role!==currentLang.roundPrep ? ` — ${currentLang.prepFor} ${baseSpeakers[s.belongsToIndex]?.initials||''}`:'');
+      el.draggable = s.type !== 'prep';
+      el.addEventListener('click', ()=>{
+        if(s.disabled) return; activeIdx = idx; applyForSpeaker(); drawSpeakers();
+      });
+      el.addEventListener('dblclick', ()=>{ if(s.type!=='spk') return; s.disabled = !s.disabled; drawSpeakers(); });
+      el.addEventListener('dragstart', ev=>{ if(s.type!=='spk') ev.preventDefault(); else ev.dataTransfer.setData('text/plain', idx) });
+      el.addEventListener('dragover', ev=>ev.preventDefault());
+      el.addEventListener('drop', ev=>{
+        ev.preventDefault();
+        const from = +ev.dataTransfer.getData('text/plain');
+        const to = idx;
+        if(speakers[from].type!=='spk' || speakers[to].type!=='spk') return;
+        const fromBase = speakers[from].baseIndex;
+        const toBase = speakers[to].baseIndex;
+        const a = baseSpeakers.splice(fromBase,1)[0];
+        baseSpeakers.splice(toBase,0,a);
+        
+        // NEW: Save if custom
+        if (formatSelect.value === 'CUSTOM') {
+          localStorage.setItem('customSpeakers', JSON.stringify(baseSpeakers));
+          PRESETS.CUSTOM.base = baseSpeakers;
+        }
+
+        buildSequenceForPreset(formatSelect.value);
+        // Find new index of the item that was at `to`
+        activeIdx = speakers.findIndex(spk => spk.baseIndex === toBase && spk.type === 'spk');
+        if (activeIdx === -1) activeIdx = 0; // fallback
+        
+        drawSpeakers();
+        applyForSpeaker();
+      });
+      spkBar.appendChild(el);
+    });
+  }
+  
+  // ---------- NEW: Notes Logic ----------
+  function saveNotes() {
+    localStorage.setItem('debateNotes', JSON.stringify(notesStore));
+  }
+  
+  function loadNotes() {
+    try {
+      const saved = localStorage.getItem('debateNotes');
+      if (saved) {
+        notesStore = JSON.parse(saved);
+      } else {
+        notesStore = {};
+      }
+    } catch(e) {
+      console.warn('Could not load notes', e);
+      notesStore = {};
+    }
+  }
+  
+  function getSpeakerNoteKey() {
+    const currentSpeaker = speakers[activeIdx];
+    if (!currentSpeaker) return null;
+
+    let baseSpeaker;
+    if (currentSpeaker.type === 'spk') {
+      baseSpeaker = baseSpeakers[currentSpeaker.baseIndex];
+    } else if (currentSpeaker.type === 'prep' && currentSpeaker.belongsToIndex !== undefined) {
+      baseSpeaker = baseSpeakers[currentSpeaker.belongsToIndex];
+    }
+    
+    if (baseSpeaker && baseSpeaker.role_en) {
+      return formatSelect.value + '_' + baseSpeaker.role_en;
+    }
+    return null;
+  }
+  
+  notesArea.oninput = () => {
+    const key = getSpeakerNoteKey();
+    if (key) {
+      notesStore[key] = notesArea.value;
+      saveNotes();
+    }
+  };
+  
+  exportNotesBtn.onclick = () => {
+    const data = {
+      notes: notesStore
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `debate-notes.json`;
+    a.click();
+  };
+  
+  importNotesBtn.onclick = () => importNotesFile.click();
+  
+  importNotesFile.onchange = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(reader.result);
+        if (obj.notes && typeof obj.notes === 'object') {
+          Object.assign(notesStore, obj.notes); // Merge notes
+          saveNotes();
+          applyForSpeaker(); // Refresh notes area
+        }
+      } catch(err) { console.warn('Note import failed:', err); }
+      e.target.value = null; // Reset file input
+    };
+    reader.readText(file);
+  };
+  
+  clearNotesBtn.onclick = () => {
+    notesStore = {};
+    saveNotes();
+    applyForSpeaker(); // Clears the text area
+  };
+
+  // ---------- apply selected speaker (load the timer values and set mode) ----------
+  function applyForSpeaker(){
+    const s = speakers[activeIdx];
+    if(!s) return;
+    
+    // Settings are now applied by formatSelect.onchange
+    const presetName = formatSelect.value;
+    const preset = PRESETS[presetName] || PRESETS.SIMSON;
+    const settings = preset.settings || PRESETS.SIMSON.settings; // Fallback to SIMSON settings
+
+    inGrace = false; graceRemain = 0; // leaving any grace state when switching
+
+    if(s.type==='prep'){
+      mode='prep';
+      const total = (s.role === currentLang.roundPrep) ? parseTime(settings.roundPrep||'20:00') : parseTime(settings.prep||prepInput.value);
+      mainTotal = total; mainRemain = total;
+      titleEl.textContent = s.role === currentLang.roundPrep ? currentLang.roundPrep : `${currentLang.prep} — (${s.side==='prop'?'Prop':(s.side==='opp'?'Opp':'')})`;
+    } else if(s.type==='spk'){
+      // Check for special time cases (e.g., PF, CX)
+      const roleKey = s.role_en || s.role; // Use role_en for a stable key
+      
+      if(presetName === 'PF' && roleKey.includes('Crossfire')){
+        mode='cex'; mainTotal = parseTime(settings.cex||'3:00'); titleEl.textContent = `${s.role}`;
+      } else if (presetName === 'PF' && roleKey.includes('Summary')) {
+        mode='reb'; mainTotal = parseTime(settings.reb||'2:00'); titleEl.textContent = `${s.role}`; // Use Rebuttal time for Summary
+      } else if (presetName === 'PF' && roleKey.includes('Final Focus')) {
+        mode='reb'; mainTotal = parseTime(settings.reb||'2:00'); titleEl.textContent = `${s.role}`; // Use Rebuttal time for Final Focus
+      } else if (presetName === 'CX' && roleKey.includes('Cross-Ex')) {
+        mode='cex'; mainTotal = parseTime(settings.cex||'3:00'); titleEl.textContent = `${s.role}`;
+      } else if (presetName === 'CX' && roleKey.includes('Rebuttal')) {
+        mode='reb'; mainTotal = parseTime(settings.reb||'5:00'); titleEl.textContent = `${s.role}`;
+      } else if (presetName === 'LD' && roleKey.includes('Cross-Ex')) {
+        mode='cex'; mainTotal = parseTime(settings.cex||'3:00'); titleEl.textContent = `${s.role}`;
+      } else if (presetName === 'LD' && (roleKey.includes('Constructive') && !roleKey.includes('Aff'))) { // Neg Con
+        mode='main'; mainTotal = parseTime('7:00'); titleEl.textContent = `${s.role} — ${currentLang.substantive}`; // LD Neg Con is 7min
+      } else if (presetName === 'LD' && roleKey.includes('Rebuttal')) {
+        mode='reb'; mainTotal = parseTime(settings.reb||'4:00'); titleEl.textContent = `${s.role}`;
+      }
+      // Default: reply or substantive
+      else {
+        const isReply = s.role.toLowerCase().includes('reply') || s.role.includes('답변') || s.initials==='GR' || s.initials==='OR' || s.initials==='PR';
+      
+        if(isReply){ 
+          mode='reb'; 
+          mainTotal = parseTime(settings.reb||rebInput.value); 
+          titleEl.textContent = `${s.role} — ${currentLang.replyRebuttal}`; 
+        } else { 
+          mode='main'; 
+          mainTotal = parseTime(settings.main||mainInput.value); 
+          titleEl.textContent = `${s.role} — ${currentLang.substantive}`; 
+        }
+      }
+      
+      mainRemain = mainTotal;
+    }
+    
+    // --- NEW: Load Notes ---
+    const key = getSpeakerNoteKey();
+    if (key) {
+      notesArea.value = notesStore[key] || "";
+    } else {
+      notesArea.value = "";
+    }
+    // Disable notes area if it's a prep timer (for the next speaker)
+    notesArea.disabled = (s.type === 'prep');
+    
+    mainRunning=false; startBtn.classList.remove('running'); setStatus('idle'); updateMeta(); render(); syncOut(true);
+  }
+
+  // ---------- update meta (helper) ----------
+  function updateMeta(){
+    const s = speakers[activeIdx];
+    let roleTxt = '';
+    if(s){
+      if(s.type==='prep'){
+        const belongsTo = baseSpeakers[s.belongsToIndex];
+        const nextInitials = belongsTo ? (belongsTo.initials || belongsTo[langSelect.value === 'ko' ? 'role_ko' : 'role_en']) : '';
+        roleTxt = s.role === currentLang.roundPrep ? currentLang.roundPrep : `${currentLang.prepFor} ${nextInitials}`;
+      } else {
+        roleTxt = s.role;
+      }
+    }
+    metaEl.textContent = roleTxt;
+
+    // Interface color state (no emojis). Warn/Bad/Grace via body classes
+    const left = mainRemain;
+    const warn = left <= yellow && left > red && (mode==='main' || mode==='prep') && !inGrace;
+    const bad = left <= red && left > 0 && (mode==='main' || mode==='prep') && !inGrace;
+    if(inGrace) applyBodyState('state-grace');
+    else if(bad) applyBodyState('state-bad');
+    else if(warn) applyBodyState('state-warn');
+    else applyBodyState(null);
+  }
+
+  // ---------- render main UI ----------
+  function render(){
+    if(!Number.isFinite(mainRemain)) mainRemain = 0;
+    if(mainRemain < 0) mainRemain = 0;
+    clockEl.textContent = inGrace ? fmt(graceRemain) : fmt(mainRemain);
+    if(inGrace){
+      const s = speakers[activeIdx];
+      if(s && s.type==='spk'){
+        titleEl.textContent = `${s.role} — ${currentLang.grace}`;
+      } else {
+        titleEl.textContent = currentLang.grace;
+      }
+    }
+    const raw = mainTotal > 0 ? (1 - (mainRemain / mainTotal)) : 0;
+    const safePct = Number.isFinite(raw) ? clamp(raw, 0, 1) : 0;
+    fillEl.style.transform = `scaleX(${safePct})`;
+    const prepDen = parseTime(prepInput.value) || 1;
+    const prepPct = clamp(1 - (prepRemain / prepDen), 0, 1);
+    $('#prepFill').style.transform = `scaleX(${prepPct})`;
+  }
+
+  // ---------- bells and continuous grace ----------
+  function startContinuousAfterGrace(){
+    if(contBellInterval) return;
+    contBellInterval = setInterval(()=> ding({type:'single'}), 250);
+  }
+
+  function triggerEndOfSpeech(){
+    // Only 'main' mode (substantive) gets a grace period
+    if(mode !== 'main') {
+      mainRunning = false;
+      startBtn.classList.remove('running');
+      if (mode === 'reb' || mode === 'cex') {
+        // FIX: Use spaced double bell
+        ding({type:'single'}); 
+        setTimeout(()=>ding({type:'single'}), spacing);
+      } else {
+        ding({type:'single'}); // Prep timer ends with single
+      }
+      stopContinuous();
+      return;
+    }
+    
+    inGrace = true;
+    mainRunning = true; // keep timer running during grace
+    startBtn.classList.add('running');
+    graceRemain = parseTime(graceInput.value);
+    
+    // --- FIX: All substantive speeches get a SPACED double bell ---
+    ding({type:'single'});
+    setTimeout(()=>ding({type:'single'}), spacing);
+    // --- END FIX ---
+    
+    stopContinuous();
+    applyBodyState('state-grace');
+  }
+
+  // ---------- main tick loop ----------
+  function tick(ts){
+    if(!lastTick) lastTick=ts; const dt = ts - lastTick; lastTick = ts;
+    if(mainRunning){
+      if(!inGrace){
+        mainRemain = Math.max(0, mainRemain - dt);
+        // bells: check when crossing thresholds (first/second)
+        if(mode==='main'){
+          const elapsed = mainTotal - mainRemain;
+          if(Math.abs(elapsed - firstBell) < dt/2) ding({type:'single'});
+          if(Math.abs(elapsed - secondBell) < dt/2) ding({type:'single'});
+        }
+        if(mainRemain === 0){
+          triggerEndOfSpeech();
+        }
+      } else {
+        graceRemain = Math.max(0, graceRemain - dt);
+        if(graceRemain === 0){
+          startContinuousAfterGrace();
+        }
+      }
+      updateMeta(); syncOut();
+    }
+    render();
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- advance logic ----------
+  function advanceToNextCard(){
+    for(let i=1;i<=speakers.length;i++){
+      const j = (activeIdx + i) % speakers.length;
+      if(!speakers[j].disabled){ activeIdx = j; applyForSpeaker(); drawSpeakers(); break; }
+    }
+  }
+
+  // ---------- Controls ----------
+  function setStatus(t){ 
+    if(t==='idle') statusEl.textContent = currentLang.statusIdle;
+    else if(t==='running') statusEl.textContent = currentLang.statusRunning;
+    else if(t==='paused') statusEl.textContent = currentLang.statusPaused;
+    else if(t==='Sound ready.') statusEl.textContent = currentLang.statusSoundReady;
+    else if(t==='Sound failed. Please refresh.') statusEl.textContent = currentLang.statusSoundFail;
+    else statusEl.textContent = t;
+  }
+  startBtn.onclick = async ()=>{
+    mainRunning = !mainRunning;
+    startBtn.classList.toggle('running', mainRunning);
+    setStatus(mainRunning ? 'running' : 'paused');
+    stopContinuous();
+    if(mainRunning) await requestWakeLock(); else await releaseWakeLock();
+    syncOut();
+  };
+  resetBtn.onclick=async ()=>{
+    inGrace = false;
+    document.body.classList.remove('state-grace','state-warn','state-bad');
+    mainRunning=false;
+    startBtn.classList.remove('running');
+    mainRemain=mainTotal;
+    graceRemain=0;
+    stopContinuous();
+    setStatus('idle');
+    updateMeta();
+    render();
+    syncOut();
+    await releaseWakeLock();
+  };
+  singleBtn.onclick=()=> ding({type:'single'});
+  doubleBtn.onclick=()=>{ ding({type:'single'}); setTimeout(()=>ding({type:'single'}), spacing) };
+  testContBtn.onclick=()=>{ stopContinuous(); document.body.classList.add('state-grace'); contBellInterval = setInterval(()=> ding({type:'single'}), 250); };
+  stopBellBtn.onclick=()=>{
+    stopContinuous();
+    document.body.classList.remove('state-grace');
+    // NEW: Also stop and reset the grace timer
+    if (inGrace) {
+      inGrace = false;
+      mainRunning = false;
+      startBtn.classList.remove('running');
+      mainRemain = 0; // Set to 0 to show time is up
+      graceRemain = 0;
+      setStatus('idle');
+      updateMeta();
+      render();
+      syncOut();
+      releaseWakeLock(); // Release lock as timer has stopped
+    }
+  };
+
+  // quick mini timers (prep/cex/reb)
+  function makeMini(startBtn, resetBtn, clockEl, fillEl, getRemain, setRemain, getTotal){
+    let running=false, last=0;
+    function draw(){ 
+      const total = getTotal();
+      clockEl.textContent = fmt(getRemain()); 
+      const pct = (total > 0) ? clamp(1-(getRemain()/total),0,1) : 0;
+      fillEl.style.transform=`scaleX(${pct})` 
+    }
+    function raf(ts){ 
+      if(!last) last=ts; const dt=ts-last; last=ts; 
+      if(running){ 
+        setRemain(Math.max(0,getRemain()-dt)); 
+        if(getRemain()===0){ 
+          running=false; 
+          startBtn.textContent = currentLang.start; 
+          ding({type:'single'}); setTimeout(()=>ding({type:'single'}), spacing);
+        } 
+        draw() 
+      } 
+      requestAnimationFrame(raf) 
+    }
+    requestAnimationFrame(raf);
+    startBtn.onclick=()=>{ 
+      running=!running; 
+      startBtn.textContent = running ? currentLang.pause : currentLang.start 
+    };
+    resetBtn.onclick=()=>{ 
+      running=false; 
+      startBtn.textContent = currentLang.start; 
+      setRemain(getTotal()); 
+      draw() 
+    };
+    // Need a function to update total and reset display
+    const updateTotal = () => {
+      if (!running) {
+        setRemain(getTotal());
+        draw();
+      }
+    };
+    return { updateTotal };
+  }
+  
+  const miniPrep = makeMini(prepStart, prepReset, prepClock, prepFill, ()=>prepRemain, v=>prepRemain = v, ()=>parseTime(prepInput.value));
+  const miniCex = makeMini(cexStart, cexReset, cexClock, cexFill, ()=>cexRemain, v=>cexRemain = v, ()=>parseTime(cexInput.value));
+  const miniReb = makeMini(rebStart, rebReset, rebClock, rebFill, ()=>rebRemain, v=>rebRemain = v, ()=>parseTime(rebInput.value));
+
+  // Update mini timers when inputs change
+  prepInput.addEventListener('change', miniPrep.updateTotal);
+  cexInput.addEventListener('change', miniCex.updateTotal);
+  rebInput.addEventListener('change', miniReb.updateTotal);
+
+
+  // ---------- scrubbing logic (paused-only) ----------
+  let isScrubbing = false;
+  function scrubTo(container, event){
+  if(mainTotal <= 0) return;
+  const rect = container.getBoundingClientRect();
+  const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+  const x = clamp(clientX - rect.left, 0, rect.width);
+  const rawPct = rect.width > 0 ? (x / rect.width) : 0;
+  const pct = Number.isFinite(rawPct) ? clamp(rawPct, 0, 1) : 0;
+  mainRemain = Math.round(mainTotal * (1 - pct));
+    if(mainRemain === 0 && !inGrace){
+      mainRunning = false;
+      triggerEndOfSpeech();
+      return;
+    }
+    updateMeta();
+    render(true);
+    syncOut();
+  }
+
+  mainProgress.addEventListener('pointerdown', (e)=>{
+    if(mainRunning) return; // only allow scrub when paused
+    isScrubbing = true;
+    mainProgress.setPointerCapture(e.pointerId);
+    scrubTo(mainProgress, e);
+  });
+  mainProgress.addEventListener('pointermove', (e)=>{ if(!isScrubbing) return; scrubTo(mainProgress, e); });
+  mainProgress.addEventListener('pointerup', (e)=>{ if(isScrubbing){ isScrubbing=false; try{ mainProgress.releasePointerCapture(e.pointerId);}catch(e){} }});
+  mainProgress.addEventListener('pointercancel', ()=>{ isScrubbing=false; });
+
+  // ---------- keyboard shortcuts ----------
+  window.addEventListener('keydown',e=>{
+    const k=e.key.toLowerCase();
+    if(['input','textarea'].includes((document.activeElement||{}).tagName?.toLowerCase())) return;
+    if(k===' '){ e.preventDefault(); startBtn.click() }
+    else if(k==='r'){ resetBtn.click() }
+    else if(k==='arrowright'){ $('#nextBtn').click() }
+    else if(k==='arrowleft'){ $('#prevBtn').click() }
+    else if(k==='1'){ singleBtn.click() }
+    else if(k==='2'){ doubleBtn.click() }
+    else if(k==='m'){ muteBtn.click() }
+    else if(k==='d'){ themeBtn.click() }
+    else if(k==='p'){ presenterBtn.click() }
+    else if(k==='h'){ helpBtn.click() }
+  });
+
+  // ---------- prev/next UI ----------
+  $('#nextBtn').onclick = ()=> { advanceToNextCard(); drawSpeakers(); };
+  $('#prevBtn').onclick = ()=>{
+    for(let i=1;i<=speakers.length;i++){
+      const j=(activeIdx - i + speakers.length)%speakers.length;
+      if(!speakers[j].disabled){ activeIdx=j; break; }
+    }
+    applyForSpeaker(); drawSpeakers();
+  };
+
+  $('#resetOrder').onclick = ()=>{ buildSequenceForPreset(formatSelect.value); drawSpeakers(); applyForSpeaker(); };
+
+  // format change handler
+  formatSelect.addEventListener('change', ()=>{
+    // NEW: Load settings for the new preset
+    const presetName = formatSelect.value;
+    const preset = PRESETS[presetName] || PRESETS.SIMSON;
+    if (preset.settings) {
+      const settings = preset.settings;
+      // Only apply if settings exist (for custom, it might be empty initially)
+      if (settings.main) {
+        mainInput.value = settings.main;
+        firstInput.value = settings.first;
+        secondInput.value = settings.second;
+        yellowInput.value = settings.yellow;
+        redInput.value = settings.red;
+        graceInput.value = settings.grace;
+        prepInput.value = settings.prep;
+        cexInput.value = settings.cex;
+        rebInput.value = settings.reb;
+        spaceInput.value = settings.spacing;
+        // Sync inputs to runtime vars
+        syncFromInputs();
+        
+        // Update mini timers
+        miniPrep.updateTotal();
+        miniCex.updateTotal();
+        miniReb.updateTotal();
+      }
+    }
+  
+    buildSequenceForPreset(formatSelect.value);
+    drawSpeakers();
+    applyForSpeaker();
+  });
+
+  // prep input live update
+  prepInput.addEventListener('change', ()=>{ 
+    if(mode==='prep'){ 
+      mainTotal = parseTime(prepInput.value); 
+      if(!mainRunning) mainRemain = mainTotal; 
+      render(); 
+    } 
+    // saveSettings(); // This is now handled by syncFromInputs
+    syncFromInputs();
+    miniPrep.updateTotal(); 
+  });
+  
+  cexInput.addEventListener('change', miniCex.updateTotal);
+  rebInput.addEventListener('change', miniReb.updateTotal);
+
+
+  // ---------- Settings Panel Toggle ----------
+  const settingsPanel = document.getElementById('settingsPanel');
+  const toggleSettingsBtn = document.getElementById('toggleSettings');
+  let settingsVisible = false;
+  toggleSettingsBtn.textContent = 'Show';
+  // ensure correct initial measured height
+  requestAnimationFrame(()=>{ settingsPanel.style.maxHeight = '0px'; });
+  toggleSettingsBtn.onclick = () => {
+    settingsVisible = !settingsVisible;
+    if(settingsVisible){
+      settingsPanel.style.maxHeight = settingsPanel.scrollHeight + 'px';
+      toggleSettingsBtn.textContent = currentLang.hide;
+    } else {
+      settingsPanel.style.maxHeight = '0px';
+      toggleSettingsBtn.textContent = currentLang.show;
+    }
+  };
+
+  // ---------- Quick Timers Panel Toggle ----------
+  const quickTimersPanel = document.getElementById('quickTimersPanel');
+  const toggleQuickTimersBtn = document.getElementById('toggleQuickTimers');
+  let quickTimersVisible = false; // Hide by default
+  
+  // Set initial state (hidden)
+  requestAnimationFrame(()=>{ 
+    quickTimersPanel.style.maxHeight = '0px';
+  });
+  toggleQuickTimersBtn.textContent = 'Show Quick Timers'; // will be overwritten by lang
+
+  toggleQuickTimersBtn.onclick = () => {
+    quickTimersVisible = !quickTimersVisible;
+    if(quickTimersVisible){
+      quickTimersPanel.style.maxHeight = quickTimersPanel.scrollHeight + 'px';
+      toggleQuickTimersBtn.textContent = currentLang.hideQuickTimers;
+    } else {
+      quickTimersPanel.style.maxHeight = '0px';
+      toggleQuickTimersBtn.textContent = currentLang.showQuickTimers;
+    }
+  };
+  
+  // ---------- Notes Panel Toggle ----------
+  toggleNotesBtn.onclick = () => {
+    notesVisible = !notesVisible;
+    if(notesVisible){
+      notesPanel.style.maxHeight = notesPanel.scrollHeight + 'px';
+      toggleNotesBtn.textContent = currentLang.hideNotes;
+    } else {
+      notesPanel.style.maxHeight = '0px';
+      toggleNotesBtn.textContent = currentLang.showNotes;
+    }
+  };
+  // Set initial state (hidden)
+  requestAnimationFrame(()=>{ 
+    notesPanel.style.maxHeight = '0px';
+  });
+
+  // ---------- Export / Import ----------
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importFile = document.getElementById('importFile');
+
+  exportBtn.onclick = () => {
+    // Save current settings before exporting
+    syncFromInputs(); 
+    
+    // Determine what to save
+    const isCustom = formatSelect.value === 'CUSTOM';
+    const settingsToSave = isCustom ? PRESETS.CUSTOM.settings : JSON.parse(localStorage.getItem('debateSettings')||'{}');
+    
+    // Clean notes from speakers before saving
+    const speakersToSave = JSON.parse(JSON.stringify(isCustom ? PRESETS.CUSTOM.base : baseSpeakers));
+    speakersToSave.forEach(s => delete s.notes); // Clean notes
+
+    const state = {
+      settings: settingsToSave,
+      speakers: speakersToSave,
+      activeIdx,
+      theme: localStorage.getItem('debateTheme')||'light',
+      preset: formatSelect.value
+    };
+    const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'debate-settings.json';
+    a.click();
+  };
+
+  importBtn.onclick = () => importFile.click();
+  importFile.onchange = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const obj = JSON.parse(reader.result);
+        if(obj.settings) {
+          // localStorage.setItem('debateSettings', JSON.stringify(obj.settings)); // Don't save to general
+          localStorage.setItem('customSettings', JSON.stringify(obj.settings)); // SAVE custom settings
+          PRESETS.CUSTOM.settings = obj.settings; // Update runtime
+        }
+        if(obj.theme) setDark(obj.theme==='dark');
+        
+        if(obj.speakers){
+          // Clean notes from imported speakers
+          obj.speakers.forEach(s => delete s.notes);
+          
+          localStorage.setItem('customSpeakers', JSON.stringify(obj.speakers)); // SAVE custom speakers
+          PRESETS.CUSTOM.base = obj.speakers; // Update runtime preset
+        }
+        
+        formatSelect.value = 'CUSTOM'; // SET to custom
+        
+        // Load the new custom settings into the inputs
+        const settings = PRESETS.CUSTOM.settings;
+        if (settings && settings.main) {
+          mainInput.value = settings.main;
+          firstInput.value = settings.first;
+          secondInput.value = settings.second;
+          yellowInput.value = settings.yellow;
+          redInput.value = settings.red;
+          graceInput.value = settings.grace;
+          prepInput.value = settings.prep;
+          cexInput.value = settings.cex;
+          rebInput.value = settings.reb;
+          spaceInput.value = settings.spacing;
+        }
+
+        if(typeof obj.activeIdx === 'number') activeIdx = obj.activeIdx;
+        else activeIdx = 0;
+        
+        syncFromInputs();
+        buildSequenceForPreset('CUSTOM'); // Rebuild with new roles
+        
+        // Ensure activeIdx is valid
+        if (activeIdx >= speakers.length) activeIdx = 0;
+        
+        drawSpeakers(); 
+        applyForSpeaker(); 
+        updateMeta();
+        
+        // Update mini timers
+        miniPrep.updateTotal();
+        miniCex.updateTotal();
+        miniReb.updateTotal();
+        
+      }catch(err){ console.warn('Import failed:', err); }
+      // Reset file input so same file can be loaded again
+      e.target.value = null;
+    };
+    reader.readText(file);
+  };
+  
+  // ---------- Language ----------
+  function setLanguage(langCode) {
+    if (!translations[langCode]) langCode = 'en';
+    currentLang = translations[langCode];
+    localStorage.setItem('debateLang', langCode);
+    langSelect.value = langCode;
+
+    // Update all data-lang-key elements
+    $$('[data-lang-key]').forEach(el => {
+      const key = el.getAttribute('data-lang-key');
+      if (currentLang[key]) {
+        // Use innerHTML for keys that might contain <strong>
+        if (['quickStart1', 'quickStart2', 'quickStart3', 'quickStart4', 'quickStart5', 'mirrorHelpDesc', 'scSpace', 'scR', 'scArrows', 'sc12', 'scM', 'scD', 'scP', 'scH', 'timersSub', 'timersReb', 'timersCex'].includes(key)) {
+            el.innerHTML = currentLang[key];
+        } else if (el.tagName === 'TEXTAREA' && key === 'notesPlaceholder') {
+            el.placeholder = currentLang[key];
+        } else {
+            el.textContent = currentLang[key];
+        }
+      }
+    });
+    
+    // Update dynamic text
+    setDark(document.documentElement.classList.contains('dark')); // Re-sets theme button text
+    toggleSettingsBtn.textContent = settingsVisible ? currentLang.hide : currentLang.show;
+    toggleQuickTimersBtn.textContent = quickTimersVisible ? currentLang.hideQuickTimers : currentLang.showQuickTimers;
+    toggleNotesBtn.textContent = notesVisible ? currentLang.hideNotes : currentLang.showNotes;
+    
+    // Update button titles
+    muteBtn.title = currentLang.titleMute;
+    startBtn.title = currentLang.titleStart;
+    resetBtn.title = currentLang.titleReset;
+    singleBtn.title = currentLang.titleSingle;
+    doubleBtn.title = currentLang.titleDouble;
+    testContBtn.title = currentLang.titleTestCont;
+    stopBellBtn.title = currentLang.titleStopBell;
+
+    // Update mini timer buttons
+    $$('#cexStart, #rebStart, #prepStart').forEach(btn => btn.textContent = currentLang.start);
+    $$('#cexReset, #rebReset, #prepReset').forEach(btn => btn.textContent = currentLang.reset);
+
+    // Re-build and re-draw speakers
+    buildSequenceForPreset(formatSelect.value);
+    drawSpeakers();
+    applyForSpeaker(); // This will call updateMeta
+  }
+  
+  langSelect.onchange = () => setLanguage(langSelect.value);
+
+  // ---------- initial load ----------
+  function init(){
+    // Load notes first
+    loadNotes();
+  
+    // NEW: Load custom preset from localStorage
+    try {
+      const customSpeakers = JSON.parse(localStorage.getItem('customSpeakers'));
+      if (customSpeakers && Array.isArray(customSpeakers) && customSpeakers.length > 0) {
+        customSpeakers.forEach(s => delete s.notes); // Clean old data
+        PRESETS.CUSTOM.base = customSpeakers;
+      }
+      const customSettings = JSON.parse(localStorage.getItem('customSettings'));
+      if (customSettings && customSettings.main) {
+        PRESETS.CUSTOM.settings = customSettings;
+      }
+    } catch(e) { console.warn('Could not load custom preset', e); }
+    
+    const savedPreset = localStorage.getItem('debatePreset') || 'SIMSON';
+    formatSelect.value = PRESETS[savedPreset] ? savedPreset : 'SIMSON';
+    
+    const savedLang = localStorage.getItem('debateLang') || 'en';
+    setLanguage(savedLang); // This also builds+draws speakers
+    
+    // This will load settings for the selected preset
+    const preset = PRESETS[formatSelect.value] || PRESETS.SIMSON;
+    let settingsToLoad = preset.settings;
+
+    // If custom is selected, try to load its settings, otherwise fallback
+    if (formatSelect.value === 'CUSTOM') {
+      settingsToLoad = PRESETS.CUSTOM.settings || PRESETS.SIMSON.settings;
+    }
+    
+    // If NOT custom, load general settings (user overrides)
+    if (formatSelect.value !== 'CUSTOM') {
+       try{ 
+         const s = JSON.parse(localStorage.getItem('debateSettings')||'null'); 
+         if(s && s.main) settingsToLoad = s; 
+       }catch(e){}
+    }
+    
+    if (settingsToLoad && settingsToLoad.main) {
+        mainInput.value = settingsToLoad.main;
+        firstInput.value = settingsToLoad.first;
+        secondInput.value = settingsToLoad.second;
+        yellowInput.value = settingsToLoad.yellow;
+        redInput.value = settingsToLoad.red;
+        graceInput.value = settingsToLoad.grace;
+        prepInput.value = settingsToLoad.prep;
+        cexInput.value = settingsToLoad.cex;
+        rebInput.value = settingsToLoad.reb;
+        spaceInput.value = settingsToLoad.spacing;
+    }
+    
+    syncFromInputs();
+    
+    // Update mini timers with initial values
+    miniPrep.updateTotal();
+    miniCex.updateTotal();
+    miniReb.updateTotal();
+    
+    // Re-call applyForSpeaker to ensure correct timer mode AND notes
+    applyForSpeaker();
+  }
+  init();
+
+
+  // ---------- Self-tests (basic) ----------
+  try{
+    console.assert(parseTime('0:30')===30000, 'parseTime 0:30 failed');
+    console.assert(parseTime('1:30')===90000, 'parseTime 1:3g0 failed');
+    // Additional tests
+    console.assert(parseTime('20:00')===1200000, 'parseTime 20:00 failed');
+    console.assert(PRESETS.SIMSON.settings.prep==='1:00', 'Simson prep should be 1:00');
+    // Sequence starts with Round Prep for Simson
+    buildSequenceForPreset('SIMSON');
+    console.assert(speakers[0].type==='prep' && speakers[0].role==='Round Prep', 'First item should be Round Prep');
+    // scaleX must receive 0..1
+    (function(){ const v = clamp(1-(500/1000),0,1); const s = `scaleX(${v})`; console.assert(/^scaleX\((0(\.\d+)?|1(\.0+)?)\)$/.test(s), 'scaleX value format'); })();
+    // Grace enters on end
+    // inGrace=false; mainTotal=1000; mainRemain=0; mode='main'; triggerEndOfSpeech(); console.assert(inGrace===true && graceRemain===parseTime(graceInput.value), 'Grace should start with configured time');
+  }catch(err){ console.warn('Self-tests warning:', err); }
+})();
+</script>
+</body>
+</html>
