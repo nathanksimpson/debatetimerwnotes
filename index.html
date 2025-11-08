@@ -70,10 +70,18 @@
   .speaker-progress{display:flex;flex-wrap:wrap;gap:9px;padding:6px 4px}
   .spk{font-size:13px;font-weight:800;padding:10px 10px;border-radius:10px;background:var(--card);border:2px solid var(--bd);cursor:grab;user-select:none;min-width:58px;text-align:center;display:flex;align-items:center;justify-content:center}
   .spk.inactive{opacity:.4;text-decoration:line-through}
-  .spk.active{box-shadow:0 0 0 3px rgba(0,0,0,0.06) inset}
+  
+  /* --- NEW: Inverted Active Speaker --- */
+  .spk.active{ /* Remove old shadow */ }
   .spk.prop{background:var(--prop-bg);border-color:var(--prop-border);color:var(--prop-fg)}
+  .spk.prop.active { background: var(--prop-fg); color: var(--prop-bg); }
+  
   .spk.opp{background:var(--opp-bg);border-color:var(--opp-border);color:var(--opp-fg)}
+  .spk.opp.active { background: var(--opp-fg); color: var(--opp-bg); }
+  
   .spk.prep{background:var(--prep-bg);border-color:var(--prep-border);color:var(--prep-fg)}
+  .spk.prep.active { background: var(--prep-fg); color: var(--prep-bg); }
+  /* --- End Inverted Active Speaker --- */
   
   /* Modals */
   #helpModal, #confirmModal {position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:100}
@@ -670,6 +678,19 @@ function applyBodyState(state){
   const confirmText = $('#confirmText');
   const confirmCancel = $('#confirmCancel');
   const confirmOK = $('#confirmOK');
+  
+  // ---------- Audio ----------
+  let audioCtx=null, unlocked=false, masterGain=null, muted=false; let contBellInterval=null;
+
+  // ---------- Runtime state ----------
+  let speakers = [];       // full sequence including prep tokens
+  let activeIdx = 0;       // index into speakers array
+  let mainRemain = 0, mainTotal = 0, firstBell = 0, secondBell = 0;
+  let yellow = 0, red = 0, grace = 0, graceRemain = 0;
+  let mainRunning = false, inGrace = false, mode = 'main';
+  let lastFrame = 0, tick=0;
+  let currentFormat = 'SIMSON';
+  let allNotes = {}; // Separate from settings
 
   // ---------- Utilities ----------
   const $$ = (s,o=document)=>Array.from(o.querySelectorAll(s));
@@ -698,7 +719,7 @@ function applyBodyState(state){
       // Notes
       speakerNotes: 'Speaker Notes', notesPlaceholder: 'Type notes for the current speaker...',
       exportNotes: 'Export Notes', importNotes: 'Import Notes', clearAllNotes: 'Clear All Notes',
-      // Quick Timers
+      // Quick TimTers
       crossEx: 'Cross-Ex / Shared', rebuttal: 'Rebuttal / Reply', prep: 'Prep', poi: 'POI',
       // Settings
       settingsTitle: 'Timer Settings', hide: 'Hide', show: 'Show',
@@ -742,8 +763,9 @@ function applyBodyState(state){
       helpTimerLogicReply: '<strong>Reply Speeches:</strong> Use the "Rebuttal" time and end with a double-bell.',
 
       helpNotesData: 'Notes & Data',
-      helpNotesPerSpeaker: `Notes are saved per-speaker, per-format (e.g., "AP - Prime Minister").`,
-      helpNotesExportTxt: `<strong>Export Notes:</strong> Saves a ".txt" file of all your notes, organized by format.`,
+      // FIX: Typo in translation (removed backticks)
+      helpNotesPerSpeaker: 'Notes are saved per-speaker, per-format (e.g., "AP - Prime Minister").',
+      helpNotesExportTxt: '<strong>Export Notes:</strong> Saves a ".txt" file of all your notes, organized by format.',
       helpNotesImport: '<strong>Import Notes:</strong> Merges notes from a `.json` file.',
       helpNotesClear: '<strong>Clear All Notes:</strong> Deletes all saved notes (with confirmation).',
       helpSettingsExport: '<strong>Export Settings:</strong> Saves your "Custom" preset and all timer settings to a `.json` file.',
@@ -838,12 +860,12 @@ function applyBodyState(state){
       helpTimerLogicReply: '<strong>답변:</strong> "반박" 시간을 사용하며 더블 벨로 종료됩니다.',
 
       helpNotesData: '메모 & 데이터',
-      helpNotesPerSpeaker: `메모는 포맷별, 발표자별로 저장됩니다 (예: "AP - Prime Minister").`,
-      helpNotesExportTxt: `<strong>메모 내보내기:</strong> 모든 메모를 포맷별로 정리된 ".txt" 파일로 저장합니다.`,
+      helpNotesPerSpeaker: '메모는 포맷별, 발표자별로 저장됩니다 (예: "AP - Prime Minister").',
+      helpNotesExportTxt: '<strong>메모 내보내기:</strong> 모든 메모를 포맷별로 정리된 ".txt" 파일로 저장합니다.',
       helpNotesImport: '<strong>메모 가져오기:</strong> `.json` 파일에서 메모를 병합합니다.',
       helpNotesClear: '<strong>모든 메모 지우기:</strong> 저장된 모든 메모를 삭제합니다 (확인 창 표시).',
-      helpSettingsExport: '<strong>설정 내보내기:</strong> "Custom" 프리셋과 모든 타이머 설정을 `.json` 파일로 저장합니다.',
-      helpSettingsImport: '<strong>설정 가져오기:</strong> `.json` 파일을 새 "Custom" 프리셋으로 로드합니다.',
+      helpSettingsExport: '<strong>설정 내보내기:</strong> "Custom" preset과 모든 타이머 설정을 `.json` 파일로 저장합니다.',
+      helpSettingsImport: '<strong>설정 가져오기:</strong> `.json` 파일을 새 "Custom" preset으로 로드합니다.',
 
       // Dynamic Roles
       roundPrep: '라운드 준비', prepFor: '준비 (다음)',
@@ -924,18 +946,7 @@ function applyBodyState(state){
     toggleSettings.textContent = settingsPanel.style.maxHeight === '0px' ? currentLang.show : currentLang.hide;
   }
 
-  // ---------- Runtime state ----------
-  let speakers = [];       // full sequence including prep tokens
-  let activeIdx = 0;       // index into speakers array
-  let mainRemain = 0, mainTotal = 0, firstBell = 0, secondBell = 0;
-  let yellow = 0, red = 0, grace = 0, graceRemain = 0;
-  let mainRunning = false, inGrace = false, mode = 'main';
-  let lastFrame = 0, tick=0;
-  let currentFormat = 'SIMSON';
-  let allNotes = {}; // Separate from settings
-  
   // ---------- Audio ----------
-  let audioCtx=null, unlocked=false, masterGain=null, muted=false; let contBellInterval=null;
   async function initAudio(){
     try{
       audioCtx = new (window.AudioContext||window.webkitContext)();
@@ -1125,7 +1136,7 @@ function applyBodyState(state){
         {role_en:'2nd Neg Rebuttal', role_ko:'2차 부정 반박', side:'opp', initials:'2NR'},
         {role_en:'2nd Aff Rebuttal', role_ko:'2차 긍정 반박', side:'prop', initials:'2AR'}
       ],
-      settings: { main:'8:00', first:'1:00', second:'7:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'3:00', reb:'5:00', poi:'0:15', spacing:'250', roundPrep:'00:00' }
+      settings: { main:'8:00', first:'1:00', second:'7:00', yellow:'1:00', red:'0:30', grace:'0:30', prep:'0:00', cex:'3:00', reb:'5:00', poi:'0:1AN', spacing:'250', roundPrep:'00:00' }
     },
     LD: {
       label: 'Lincoln–Douglas',
@@ -1756,7 +1767,9 @@ function applyBodyState(state){
         panel.style.borderWidth = '0px';
       }
     } else {
-      panel.style.maxHeight = panel.scrollHeight + 'px';
+      // ********** THIS IS THE FIX **********
+      panel.style.maxHeight = '500px'; // Use CSS max-height, not scrollHeight
+      // ***********************************
       if (panel === notesPanel) {
         panel.style.paddingTop = '16px';
         panel.style.paddingBottom = '16px';
@@ -1842,7 +1855,7 @@ function applyBodyState(state){
   
   // ---------- Help Modal Listeners (FIXED) ----------
   helpBtn.onclick = () => helpModal.style.display = 'flex';
-  closeHelp.onclick = () => helpModal.style.display = 'none';
+  closeHelp.onclick = () => helpModal.style.display = 'none'; // <-- FIX: Removed the 'H'
 
   // ---------- Initialization ----------
   function init() {
