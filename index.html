@@ -934,6 +934,39 @@ function applyBodyState(state){
   let currentFormat = 'SIMSON';
   let allNotes = {}; // Separate from settings
   
+  // ---------- Audio ----------
+  let audioCtx=null, unlocked=false, masterGain=null, muted=false; let contBellInterval=null;
+  async function initAudio(){
+    try{
+      audioCtx = new (window.AudioContext||window.webkitContext)();
+      masterGain = audioCtx.createGain(); masterGain.gain.value = +volume.value; masterGain.connect(audioCtx.destination);
+      unlocked=true; setStatus(currentLang.statusSoundReady);
+    }catch(e){ setStatus(currentLang.statusSoundFail); }
+  }
+  enableBtn.onclick=initAudio;
+  volume.oninput=()=>{ if(masterGain) masterGain.gain.value = +volume.value };
+  
+  function ding({type='single'}={}){
+    if(!unlocked||!audioCtx) return;
+    const now=audioCtx.currentTime;
+    const osc=audioCtx.createOscillator();
+    const osc2=audioCtx.createOscillator();
+    const gain=audioCtx.createGain();
+    const base=880; // A5
+    osc.type='sine'; osc.frequency.setValueAtTime(base,now);
+    osc2.type='sine'; osc2.frequency.setValueAtTime(base*1.5,now);
+    gain.gain.setValueAtTime(muted?0:0.4,now);
+    gain.gain.exponentialRampToValueAtTime(muted?0:0.0001, now+0.8);
+    osc.connect(gain); osc2.connect(gain); gain.connect(masterGain);
+    osc.start(now); osc2.start(now); osc.stop(now+0.9); osc2.stop(now+0.9);
+  }
+  function stopContinuous(){ if(contBellInterval){ clearInterval(contBellInterval); contBellInterval=null } }
+
+  muteBtn.onclick=()=>{ 
+    muted=!muted; 
+    muteBtn.classList.toggle('active', muted); // Use 'active' class
+  };
+
   // ---------- Theme ----------
   const setDark = (on)=>{
     setDarkGlobal(on); // Use global function
@@ -941,7 +974,6 @@ function applyBodyState(state){
     themeBtn.classList.toggle('active', on);
     updateButtonStates();
   };
-  // setDark(localStorage.getItem('debateTheme')==='dark'); // <-- MOVED TO INIT
   themeBtn.onclick = ()=> setDark(!document.documentElement.classList.contains('dark'));
 
   // ---------- Presenter Mode ----------
@@ -1115,39 +1147,6 @@ function applyBodyState(state){
     }
   };
 
-  // ---------- Audio ----------
-  let audioCtx=null, unlocked=false, masterGain=null, muted=false; let contBellInterval=null;
-  async function initAudio(){
-    try{
-      audioCtx = new (window.AudioContext||window.webkitContext)();
-      masterGain = audioCtx.createGain(); masterGain.gain.value = +volume.value; masterGain.connect(audioCtx.destination);
-      unlocked=true; setStatus(currentLang.statusSoundReady);
-    }catch(e){ setStatus(currentLang.statusSoundFail); }
-  }
-  enableBtn.onclick=initAudio;
-  volume.oninput=()=>{ if(masterGain) masterGain.gain.value = +volume.value };
-  
-  function ding({type='single'}={}){
-    if(!unlocked||!audioCtx) return;
-    const now=audioCtx.currentTime;
-    const osc=audioCtx.createOscillator();
-    const osc2=audioCtx.createOscillator();
-    const gain=audioCtx.createGain();
-    const base=880; // A5
-    osc.type='sine'; osc.frequency.setValueAtTime(base,now);
-    osc2.type='sine'; osc2.frequency.setValueAtTime(base*1.5,now);
-    gain.gain.setValueAtTime(muted?0:0.4,now);
-    gain.gain.exponentialRampToValueAtTime(muted?0:0.0001, now+0.8);
-    osc.connect(gain); osc2.connect(gain); gain.connect(masterGain);
-    osc.start(now); osc2.start(now); osc.stop(now+0.9); osc2.stop(now+0.9);
-  }
-  function stopContinuous(){ if(contBellInterval){ clearInterval(contBellInterval); contBellInterval=null } }
-
-  muteBtn.onclick=()=>{ 
-    muted=!muted; 
-    muteBtn.classList.toggle('active', muted); // Use 'active' class
-  };
-
   // ---------- Timers: Main ----------
   function startMain(e){
     if(e) e.preventDefault(); if(mainRunning) return pauseMain(true);
@@ -1168,6 +1167,7 @@ function applyBodyState(state){
     pauseMain(); inGrace=false; stopContinuous();
     mainRemain = mainTotal; graceRemain = 0;
     updateMainDisplay(); setStatus(currentLang.statusIdle);
+    applyBodyState(null); // <-- FIX: Reset body color
     syncOut();
   }
   function mainLoop(now){
@@ -1184,8 +1184,11 @@ function applyBodyState(state){
       if(++tick % 2 === 1){
         if(firstBell > 0 && mainRemain <= (mainTotal - firstBell) && mainRemain+delta > (mainTotal - firstBell)) ding();
         if(secondBell > 0 && mainRemain <= (mainTotal - secondBell) && mainRemain+delta > (mainTotal - secondBell)) ding();
-        if(mainRemain <= 0) triggerEndOfSpeech();
-        else {
+        
+        // FIX: Check visual state *before* end of speech
+        if(mainRemain <= 0) {
+          triggerEndOfSpeech();
+        } else {
           const warn = mainRemain <= yellow && mainRemain > red;
           const bad = mainRemain <= red;
           applyBodyState(bad ? 'state-bad' : (warn ? 'state-warn' : null));
@@ -1209,87 +1212,113 @@ function applyBodyState(state){
   function updateMainDisplay(){
     const r = inGrace ? graceRemain : mainRemain;
     clock.textContent = fmt(r);
-    const pct = inGrace ? 1 : (mainTotal > 0 ? clamp(mainRemain/mainTotal, 0, 1) : 0);
+    // FIX: Progress bar fills left-to-right
+    const pct = inGrace ? 1 : (mainTotal > 0 ? clamp((mainTotal - mainRemain) / mainTotal, 0, 1) : 0);
     fill.style.transform = `scaleX(${pct})`;
   }
   
-  mainProgress.onclick = e => {
-    if (isScrubbing) return; // Prevent click from firing after drag
-    const rect = mainProgress.getBoundingClientRect();
-    const pct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    mainRemain = mainTotal * pct;
-    if(mainRunning) pauseMain(true); // Pause if running
-    if(inGrace) { inGrace = false; stopContinuous(); } // Stop grace
-    updateMainDisplay();
-    syncOut();
-  };
-
-  // NEW: Drag-to-scrub logic
+  // FIX: Scrubbing logic
   function scrubTo(e) {
-    e.preventDefault();
+    if (e.preventDefault) e.preventDefault();
     const rect = mainProgress.getBoundingClientRect();
     let clientX = e.clientX;
     if (e.touches && e.touches[0]) {
       clientX = e.touches[0].clientX; // Support touch
     }
     const pct = clamp((clientX - rect.left) / rect.width, 0, 1);
-    mainRemain = mainTotal * pct;
+    // FIX: Scrubbing is based on pct (left-to-right)
+    mainRemain = mainTotal * (1 - pct);
+    
     if(inGrace) { inGrace = false; stopContinuous(); }
+    
+    // FIX: Update visual state immediately on scrub
+    const warn = mainRemain <= yellow && mainRemain > red;
+    const bad = mainRemain <= red;
+    applyBodyState(bad ? 'state-bad' : (warn ? 'state-warn' : null));
+    
     updateMainDisplay();
     syncOut();
   }
-
-  mainProgress.addEventListener('pointerdown', (e) => {
-    if (mainTotal <= 0) return; // Don't scrub if no time
+  
+  mainProgress.onpointerdown = e => {
+    if (mainTotal <= 0) return;
     isScrubbing = true;
-    if(mainRunning) pauseMain(true); // Pause on scrub start
+    if (mainRunning) pauseMain(true);
     mainProgress.setPointerCapture(e.pointerId);
     scrubTo(e);
-  });
+  };
   
-  mainProgress.addEventListener('pointermove', (e) => {
-    if (isScrubbing) {
-      scrubTo(e);
-    }
-  });
-
-  mainProgress.addEventListener('pointerup', (e) => {
+  mainProgress.onpointermove = e => {
+    if (isScrubbing) scrubTo(e);
+  };
+  
+  mainProgress.onpointerup = e => {
+    if (!isScrubbing) return;
     mainProgress.releasePointerCapture(e.pointerId);
     isScrubbing = false;
-  });
-  // Add touch equivalents for mobile scrubbing
+    // Manually trigger one last scrubTo ensure sync
+    scrubTo(e);
+  };
+  
+  // Add touch equivalents
   mainProgress.addEventListener('touchstart', (e) => {
      if (mainTotal <= 0) return;
      isScrubbing = true;
      if(mainRunning) pauseMain(true);
      scrubTo(e);
   }, { passive: false });
+  
   mainProgress.addEventListener('touchmove', (e) => {
-    if (isScrubbing) {
-      scrubTo(e);
-    }
+    if (isScrubbing) scrubTo(e);
   }, { passive: false });
+  
   mainProgress.addEventListener('touchend', (e) => {
     isScrubbing = false;
   });
 
-
   // ---------- Timers: Quick ----------
-  function quickTimer(total, clock, fill){
-    let remain = total, running=false, last=0;
-    const loop = now =>{
-      if(!running) return;
-      remain -= (now - last); last=now;
-      if(remain <= 0){ remain=0; running=false; ding(); }
-      clock.textContent = fmt(remain);
-      fill.style.transform = `scaleX(${remain/total})`;
-      if(running) requestAnimationFrame(loop);
+  // Refactored to be cleaner
+  function createQuickTimer(totalMs, clockEl, fillEl) {
+    let remain = totalMs, running = false, last = 0, reqId = null;
+    
+    const update = () => {
+      clockEl.textContent = fmt(remain);
+      // FIX: Progress bar fills left-to-right
+      fillEl.style.transform = `scaleX(${totalMs > 0 ? (totalMs - remain) / totalMs : 0})`;
     };
-    return {
-      start: ()=>{if(running||remain<=0)return; running=true; last=performance.now(); requestAnimationFrame(loop)},
-      reset: ()=>{running=false; remain=total; clock.textContent=fmt(total); fill.style.transform='scaleX(1)'}
-    }
+
+    const loop = (now) => {
+      if (!running) return;
+      remain -= (now - last);
+      last = now;
+      if (remain <= 0) {
+        remain = 0;
+        running = false;
+        ding();
+      }
+      update();
+      if (running) reqId = requestAnimationFrame(loop);
+    };
+
+    const start = () => {
+      if (running || remain <= 0) return;
+      running = true;
+      last = performance.now();
+      reqId = requestAnimationFrame(loop);
+    };
+
+    const reset = () => {
+      if (reqId) cancelAnimationFrame(reqId);
+      reqId = null;
+      running = false;
+      remain = totalMs;
+      update();
+    };
+    
+    reset(); // Initial render
+    return { start, reset };
   }
+  
   let cexTimer, rebTimer, prepTimer, poiTimer;
 
   // ---------- Speaker Progress & State ----------
@@ -1311,18 +1340,20 @@ function applyBodyState(state){
       seq.push({ ...spk, time, type: isReply ? 'reply' : 'main' });
       
       // Add prep time (if not last speaker and prep > 0)
+      // FIX: Check for 'AP' (no prep)
       if(prepTime > 0 && i < base.length - 1 && currentFormat !== 'AP' && currentFormat !== 'WSDC' && currentFormat !== 'BP' && currentFormat !== 'PF' && currentFormat !== 'LD' && currentFormat !== 'CX') {
         seq.push({ role_en: 'Prep', role_ko: '준비 (다음)', side: 'prep', initials: 'Prep', time: prepTime, for: base[i+1].role_en });
       }
     });
     
     // Add active/inactive state from original array if it exists
+    // FIX: Default to active: true
     return seq.map((spk,i) => ({...spk, active: speakers[i] ? speakers[i].active : true }));
   }
 
   function renderSpeakerProgress(){
     spkBar.innerHTML = '';
-    const lang = currentLang.lang || 'en';
+    const lang = langSelect.value || 'en';
     const roleKey = `role_${lang}`;
     
     speakers.forEach((s,i)=>{
@@ -1389,7 +1420,7 @@ function applyBodyState(state){
     }
     
     // Set UI
-    const lang = currentLang.lang || 'en';
+    const lang = langSelect.value || 'en';
     const roleKey = `role_${lang}`;
     mainTitle.textContent = s[roleKey] || s.role_en;
     metaEl.textContent = s.initials || '';
@@ -1432,7 +1463,9 @@ function applyBodyState(state){
     });
     
     // Build speaker sequence
+    // FIX: Force all speakers to be active on new preset load
     speakers = buildSequence(p.base, p.settings);
+    speakers.forEach(s => s.active = true); // <-- HERE
     
     // If it's CUSTOM, try to load from storage
     if(format === 'CUSTOM') {
@@ -1599,7 +1632,7 @@ function applyBodyState(state){
     allNotes[key] = notesArea.value;
     localStorage.setItem('debateNotes', JSON.stringify(allNotes));
     // Update button cue
-    toggleNotesBtn.classList.toggle('active-cue', !!notesArea.value);
+    toggleNotesBtn.classList.toggle('active', !!notesArea.value);
   }
   
   function loadSpeakerNotes() {
@@ -1620,7 +1653,7 @@ function applyBodyState(state){
     if (!s) {
       notesArea.value = '';
       notesArea.disabled = true;
-      toggleNotesBtn.classList.remove('active-cue'); // Remove cue if no speaker
+      toggleNotesBtn.classList.remove('active'); // Remove cue if no speaker
       return;
     }
     
@@ -1630,9 +1663,10 @@ function applyBodyState(state){
     
     // Disable if in prep mode
     notesArea.disabled = isPrep;
+    notesArea.placeholder = isPrep ? '' : currentLang.notesPlaceholder;
     
     // Update button cue
-    toggleNotesBtn.classList.toggle('active-cue', !!note);
+    toggleNotesBtn.classList.toggle('active', !!note);
   }
   
   notesArea.oninput = saveSpeakerNotes;
@@ -1701,11 +1735,10 @@ function applyBodyState(state){
 
   // ---------- Quick Timer Init ----------
   function initQuickTimers(){
-    cexTimer = quickTimer(parseTime(cexInput.value), cexClock, cexFill);
-    rebTimer = quickTimer(parseTime(rebInput.value), rebClock, rebFill);
-    prepTimer = quickTimer(parseTime(prepInput.value), prepClock, prepFill);
-    poiTimer = quickTimer(parseTime(poiInput.value), poiClock, poiFill);
-    cexTimer.reset(); rebTimer.reset(); prepTimer.reset(); poiTimer.reset();
+    cexTimer = createQuickTimer(parseTime(cexInput.value), cexClock, cexFill);
+    rebTimer = createQuickTimer(parseTime(rebInput.value), rebClock, rebFill);
+    prepTimer = createQuickTimer(parseTime(prepInput.value), prepClock, prepFill);
+    poiTimer = createQuickTimer(parseTime(poiInput.value), poiClock, poiFill);
   }
   cexStart.onclick = ()=>cexTimer.start(); cexReset.onclick = ()=>cexTimer.reset();
   rebStart.onclick = ()=>rebTimer.start(); rebReset.onclick = ()=>rebTimer.reset();
@@ -1773,6 +1806,7 @@ function applyBodyState(state){
       mainRemain = 0;
       graceRemain = 0;
       pauseMain(true);
+      applyBodyState(null); // <-- FIX: Reset body color
       updateMainDisplay();
       setStatus(currentLang.statusIdle);
       syncOut();
@@ -1787,10 +1821,9 @@ function applyBodyState(state){
   
   window.addEventListener('keydown', e => {
     // FIX: Don't run shortcuts if user is typing
-    const targetTag = e.target.tagName;
-    if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT') {
-      if (e.key.toLowerCase() !== 'h') return; // Allow 'h' for help
-      if (e.target !== notesArea && e.key.toLowerCase() === 'h') return; // Allow 'h' except in notes
+    const targetTag = e.target.tagName.toLowerCase();
+    if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') {
+      return; // Block all shortcuts if typing
     }
     
     switch(e.key.toLowerCase()){
