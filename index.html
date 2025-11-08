@@ -457,7 +457,7 @@
               <label class="label"><span data-lang-key="prepTime">Prep Time (m:ss)</span><input id="prepInput" class="input" value="1:00"/></label>
               <label class="label"><span data-lang-key="crossExTime">Cross-Ex (m:ss)</span><input id="cexInput" class="input" value="1:00"/></label>
               <label class="label"><span data-lang-key="rebuttalTime">Rebuttal (m:ss)</span><input id="rebInput" class="input" value="3:00"/></label>
-              <label class="label"><span data-lang-key="poiTime">POI Time (m:ss)</span><input id="poiInput" class="input" value="0:15"/></label>
+              <label class="label"><span data-lang-key="poiTime">POI Time (m:ss)</span><input id="poiInput" class="input" value="0:1Date"/></label>
               <label class="label"><span data-lang-key="bellSpacing">Bell spacing (ms)</span><input id="spaceInput" class="input" value="250"/></label>
             </div>
             <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
@@ -493,6 +493,9 @@
       
       <h3 data-lang-key="helpHeaderButtons">Header Buttons</h3>
       <ul>
+        <!-- ***** THIS IS THE FIX ***** -->
+        <li data-lang-key="helpInitSound"><strong><u>Initialize Sound:</u></strong> You MUST click this once to enable sound in the browser.</li>
+        <!-- *************************** -->
         <li data-lang-key="helpDebateStyle"><strong>Debate Style:</strong> Select your format (AP, BP, etc.). This loads all speakers and default times.</li>
         <li data-lang-key="helpVolume"><strong>Volume:</strong> Controls the bell sound level.</li>
         <li data-lang-key="helpLang"><strong>Lang:</strong> Switches between English and Korean.</li>
@@ -502,7 +505,6 @@
         <li data-lang-key="helpMirror"><strong>Mirror (Screen/Mirror):</strong> Hides all controls on the main screen. Use this when *mirroring* your device to a display. <strong>Click the speech title to exit.</strong></li>
         <li data-lang-key="helpQuickTimers"><strong>Quick Timers (Clock):</strong> Shows/hides the extra timers (Cross-Ex, Prep, etc.). Icon has a slash when hidden.</li>
         <li data-lang-key="helpNotes"><strong>Notes (Document):</strong> Shows/hides the speaker notes panel. Icon has a slash when hidden. Lights up if the current speaker has notes.</li>
-        <li data-lang-key="helpInitSound"><strong>Initialize Sound:</strong> You MUST click this once to enable sound in the browser.</li>
         <li data-lang-key="helpMute"><strong>Mute (Speaker):</strong> Toggles all bell sounds on/off. (Shortcut: M)</li>
       </ul>
 
@@ -731,6 +733,9 @@ function applyBodyState(state){
       // Help Modal
       helpTitle: 'Help & Features', close: 'Close',
       helpHeaderButtons: 'Header Buttons',
+      // ***** THIS IS THE FIX *****
+      helpInitSound: '<strong><u>Initialize Sound:</u></strong> You MUST click this once to enable sound in the browser.',
+      // ***************************
       helpDebateStyle: '<strong>Debate Style:</strong> Select your format (AP, BP, etc.). This loads all speakers and default times.',
       helpVolume: '<strong>Volume:</strong> Controls the bell sound level.',
       helpLang: '<strong>Lang:</strong> Switches between English and Korean.',
@@ -740,7 +745,6 @@ function applyBodyState(state){
       helpMirror: '<strong>Mirror (Screen/Mirror):</strong> Hides all controls on the main screen. Use this when *mirroring* your device to a display. <strong>Click the speech title to exit.</strong>',
       helpQuickTimers: '<strong>Quick Timers (Clock):</strong> Shows/hides the extra timers (Cross-Ex, Prep, etc.). Icon has a slash when hidden.',
       helpNotes: '<strong>Notes (Document):</strong> Shows/hides the speaker notes panel. Icon has a slash when hidden. Lights up if the current speaker has notes.',
-      helpInitSound: '<strong>Initialize Sound:</strong> You MUST click this once to enable sound in the browser.',
       helpMute: '<strong>Mute (Speaker):</strong> Toggles all bell sounds on/off. (Shortcut: M)',
       
       helpSpeakerProgress: 'Speaker Progress',
@@ -763,7 +767,6 @@ function applyBodyState(state){
       helpTimerLogicReply: '<strong>Reply Speeches:</strong> Use the "Rebuttal" time and end with a double-bell.',
 
       helpNotesData: 'Notes & Data',
-      // FIX: Typo in translation (removed backticks)
       helpNotesPerSpeaker: 'Notes are saved per-speaker, per-format (e.g., "AP - Prime Minister").',
       helpNotesExportTxt: '<strong>Export Notes:</strong> Saves a ".txt" file of all your notes, organized by format.',
       helpNotesImport: '<strong>Import Notes:</strong> Merges notes from a `.json` file.',
@@ -828,6 +831,9 @@ function applyBodyState(state){
       // Help Modal
       helpTitle: '도움말 & 기능', close: '닫기',
       helpHeaderButtons: '헤더 버튼',
+      // ***** THIS IS THE FIX *****
+      helpInitSound: '<strong><u>소리 초기화:</u></strong> 브라우저에서 소리를 활성화하려면 반드시 한 번 클릭해야 합니다.',
+      // ***************************
       helpDebateStyle: '<strong>토론 방식:</strong> 포맷(AP, BP 등)을 선택합니다. 모든 발표자와 기본 시간을 로드합니다.',
       helpVolume: '<strong>볼륨:</strong> 벨소리 크기를 조절합니다.',
       helpLang: '<strong>언어:</strong> 한국어와 영어 간을 전환합니다.',
@@ -837,7 +843,6 @@ function applyBodyState(state){
       helpMirror: '<strong>미러 (스크린/거울):</strong> 메인 화면의 모든 컨트롤을 숨깁니다. 기기를 디스플레이에 *미러링*할 때 사용하세요. <strong>종료하려면 발표 제목을 클릭하세요.</strong>',
       helpQuickTimers: '<strong>빠른 타이머 (시계):</strong> 추가 타이머(교차조사, 준비 등)를 표시하거나 숨깁니다. 숨겨져 있을 때는 아이콘에 슬래시가 표시됩니다.',
       helpNotes: '<strong>메모 (문서):</strong> 발표자 메모 패널을 표시하거나 숨깁니다. 숨겨져 있을 때는 아이콘에 슬래시가 표시됩니다. 현재 발표자에게 메모가 있으면 불이 들어옵니다.',
-      helpInitSound: '<strong>소리 초기화:</strong> 브라우저에서 소리를 활성화하려면 반드시 한 번 클릭해야 합니다.',
       helpMute: '<strong>음소거 (스피커):</strong> 모든 벨소리를 켜거나 끕니다. (단축키: M)',
 
       helpSpeakerProgress: '발표자 진행',
@@ -1855,7 +1860,7 @@ function applyBodyState(state){
   
   // ---------- Help Modal Listeners (FIXED) ----------
   helpBtn.onclick = () => helpModal.style.display = 'flex';
-  closeHelp.onclick = () => helpModal.style.display = 'none'; // <-- FIX: Removed the 'H'
+  closeHelp.onclick = () => helpModal.style.display = 'none';
 
   // ---------- Initialization ----------
   function init() {
